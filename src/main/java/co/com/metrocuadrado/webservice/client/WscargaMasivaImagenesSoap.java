@@ -1,0 +1,18 @@
+/**
+ * WscargaMasivaImagenesSoap.java
+ *
+ * This file was auto-generated from WSDL
+ * by the Apache Axis 1.4 Apr 22, 2006 (06:55:48 PDT) WSDL2Java emitter.
+ */
+
+package co.com.metrocuadrado.webservice.client;
+
+/**
+ *
+ * @author Jaime Alfredo Bonilla Perez jaimebp@gmail.com
+ */
+
+public interface WscargaMasivaImagenesSoap extends java.rmi.Remote {
+    public java.lang.String redimensionarImagenesOnline(java.lang.String idPortal, java.lang.String fechaCreacion, java.lang.String token, java.lang.String operacion, java.lang.String xmlDatos, java.lang.String contenedor) throws java.rmi.RemoteException;
+    public java.lang.String redimensionarImagenesOnlineUrl(java.lang.String idPortal, java.lang.String fechaCreacion, java.lang.String token, java.lang.String operacion, java.lang.String urlFileXmlDatos, java.lang.String contenedor) throws java.rmi.RemoteException;
+}

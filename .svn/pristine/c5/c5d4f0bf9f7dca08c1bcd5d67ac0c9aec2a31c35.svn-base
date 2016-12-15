@@ -1,0 +1,60 @@
+package co.com.ceet.procalculo;
+
+public class MetrocuadradoGeoServiceProxy implements co.com.ceet.procalculo.MetrocuadradoGeoService {
+  private String _endpoint = null;
+  private co.com.ceet.procalculo.MetrocuadradoGeoService metrocuadradoGeoService = null;
+  
+  public MetrocuadradoGeoServiceProxy() {
+    _initMetrocuadradoGeoServiceProxy();
+  }
+  
+  public MetrocuadradoGeoServiceProxy(String endpoint) {
+    _endpoint = endpoint;
+    _initMetrocuadradoGeoServiceProxy();
+  }
+  
+  private void _initMetrocuadradoGeoServiceProxy() {
+    try {
+      metrocuadradoGeoService = (new co.com.ceet.procalculo.MetrocuadradoGeoServiceServiceLocator()).getmetrocuadradoGeoServicePort();
+      if (metrocuadradoGeoService != null) {
+        if (_endpoint != null)
+          ((javax.xml.rpc.Stub)metrocuadradoGeoService)._setProperty("javax.xml.rpc.service.endpoint.address", _endpoint);
+        else
+          _endpoint = (String)((javax.xml.rpc.Stub)metrocuadradoGeoService)._getProperty("javax.xml.rpc.service.endpoint.address");
+      }
+      
+    }
+    catch (javax.xml.rpc.ServiceException serviceException) {}
+  }
+  
+  public String getEndpoint() {
+    return _endpoint;
+  }
+  
+  public void setEndpoint(String endpoint) {
+    _endpoint = endpoint;
+    if (metrocuadradoGeoService != null)
+      ((javax.xml.rpc.Stub)metrocuadradoGeoService)._setProperty("javax.xml.rpc.service.endpoint.address", _endpoint);
+    
+  }
+  
+  public co.com.ceet.procalculo.MetrocuadradoGeoService getMetrocuadradoGeoService() {
+    if (metrocuadradoGeoService == null)
+      _initMetrocuadradoGeoServiceProxy();
+    return metrocuadradoGeoService;
+  }
+  
+  public co.com.ceet.procalculo.InmuebleUbicadoDTO ubicarInmuebleSinGuardarEnBd(java.lang.String codigoInmueble, java.lang.String direccion, java.lang.Integer municipio) throws java.rmi.RemoteException, co.com.ceet.procalculo.MetrocuadradoServiceException{
+    if (metrocuadradoGeoService == null)
+      _initMetrocuadradoGeoServiceProxy();
+    return metrocuadradoGeoService.ubicarInmuebleSinGuardarEnBd(codigoInmueble, direccion, municipio);
+  }
+  
+  public co.com.ceet.procalculo.InmuebleUbicadoDTO ubicarInmueble(java.lang.String codigoInmueble, java.lang.String direccion, java.lang.Integer municipio) throws java.rmi.RemoteException, co.com.ceet.procalculo.MetrocuadradoServiceException{
+    if (metrocuadradoGeoService == null)
+      _initMetrocuadradoGeoServiceProxy();
+    return metrocuadradoGeoService.ubicarInmueble(codigoInmueble, direccion, municipio);
+  }
+  
+  
+}

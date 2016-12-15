@@ -1,0 +1,11 @@
+eclipse.preferences.version=1
+encoding//src/main/java=ISO-8859-1
+encoding//src/main/java/co/com/metrocuadrado/webservice/procalculo/InmuebleUbicadoDTO.java=UTF-8
+encoding//src/main/java/co/com/metrocuadrado/webservice/procalculo/MetrocuadradoGeoService.java=UTF-8
+encoding//src/main/java/co/com/metrocuadrado/webservice/procalculo/MetrocuadradoGeoServiceService.java=UTF-8
+encoding//src/main/java/co/com/metrocuadrado/webservice/procalculo/MetrocuadradoGeoServiceServiceLocator.java=UTF-8
+encoding//src/main/java/co/com/metrocuadrado/webservice/procalculo/MetrocuadradoGeoServiceServiceSoapBindingStub.java=UTF-8
+encoding//src/main/java/co/com/metrocuadrado/webservice/procalculo/MetrocuadradoServiceException.java=UTF-8
+encoding//src/main/resources=ISO-8859-1
+encoding//src/test/java=ISO-8859-1
+encoding/<project>=ISO-8859-1

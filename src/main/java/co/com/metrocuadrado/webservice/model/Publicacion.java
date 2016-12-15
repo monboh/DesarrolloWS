@@ -1,0 +1,195 @@
+package co.com.metrocuadrado.webservice.model;
+
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+import java.io.Serializable;
+import java.util.Date;
+
+/**
+ *
+ * @author Jaime Alfredo Bonilla Perez jaimebp@gmail.com
+ */
+public class Publicacion implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    private String idPublicacion;
+    private Integer secuenciaImagen;
+    private Integer idPortal;
+    private String token;
+    private String contenedor;
+    private String operacion;
+    private String imagen;
+    
+    private Date fecha;
+    private String xmlDatos;
+    private Boolean transformar;
+    private String encodedString;
+    private String response;
+    
+    public Publicacion() {
+    }
+
+    public Publicacion(String idPublicacion) {
+        this.idPublicacion = idPublicacion;
+    }
+
+    public String getIdPublicacion() {
+        return idPublicacion;
+    }
+
+    public void setIdPublicacion(String idPublicacion) {
+        this.idPublicacion = idPublicacion;
+    }
+
+
+    public Integer getIdPortal() {
+        return idPortal;
+    }
+
+    public void setIdPortal(Integer idPortal) {
+        this.idPortal = idPortal;
+    }
+
+    public String getToken() {
+        return token;
+    }
+
+    public void setToken(String token) {
+        this.token = token;
+    }
+
+    public String getContenedor() {
+        return contenedor;
+    }
+
+    public void setContenedor(String contenedor) {
+        this.contenedor = contenedor;
+    }
+
+    public String getOperacion() {
+        return operacion;
+    }
+
+    public void setOperacion(String operacion) {
+        this.operacion = operacion;
+    }
+
+    public String getImagen() {
+        return imagen;
+    }
+
+    public void setImagen(String imagen) {
+        this.imagen = imagen;
+    }
+
+    @Override
+	public String toString() {
+		return "Publicacion [idPublicacion=" + idPublicacion
+				+ ", secuenciaImagen=" + secuenciaImagen + ", idPortal="
+				+ idPortal + ", token=" + token + ", contenedor=" + contenedor
+				+ ", operacion=" + operacion + ", imagen=" + imagen
+				+ ", fecha=" + fecha + ", xmlDatos=" + xmlDatos
+				+ ", transformar=" + transformar + ", encodedString="
+				+ encodedString + ", response=" + response + "]";
+	}
+
+	/**
+     * @return the secuenciaImagen
+     */
+    public Integer getSecuenciaImagen() {
+        return secuenciaImagen;
+    }
+
+    /**
+     * @param secuenciaImagen the secuenciaImagen to set
+     */
+    public void setSecuenciaImagen(Integer secuenciaImagen) {
+        this.secuenciaImagen = secuenciaImagen;
+    }
+
+    /**
+     * @return the fecha
+     */
+    public Date getFecha() {
+        return fecha;
+    }
+
+    /**
+     * @param fecha the fecha to set
+     */
+    public void setFecha(Date fecha) {
+        this.fecha = fecha;
+    }
+
+    /**
+     * @return the xmlDatos
+     */
+    public String getXmlDatos() {
+        return xmlDatos;
+    }
+
+    /**
+     * @param xmlDatos the xmlDatos to set
+     */
+    public void setXmlDatos(String xmlDatos) {
+        this.xmlDatos = xmlDatos;
+    }
+
+    /**
+     * @return the transformar
+     */
+    public Boolean getTransformar() {
+        return transformar;
+    }
+
+    /**
+     * @param transformar the transformar to set
+     */
+    public void setTransformar(Boolean transformar) {
+        this.transformar = transformar;
+    }
+
+    public String getEncodedString() {
+		return encodedString;
+	}
+
+    public void setEncodedString(String encodedString) {
+		this.encodedString = encodedString;
+	}
+
+    public String getResponse() {
+		return response;
+	}
+
+    public void setResponse(String response) {
+		this.response = response;
+	}
+
+    @Override
+    public int hashCode() {
+        int hash = 0;
+        hash += (idPublicacion != null ? idPublicacion.hashCode() : 0);
+        return hash;
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        // TODO: Warning - this method won't work in the case the id fields are not set
+        if (!(object instanceof Publicacion)) {
+            return false;
+        }
+        Publicacion other = (Publicacion) object;
+        if ((this.idPublicacion == null && other.idPublicacion != null) || (this.idPublicacion != null && !this.idPublicacion.equals(other.idPublicacion))) {
+            return false;
+        }
+        return true;
+    }
+
+    public void init(){
+    	this.setContenedor("inmuebles");
+    	this.setIdPortal(1);
+        this.setFecha(new Date());
+    }
+}

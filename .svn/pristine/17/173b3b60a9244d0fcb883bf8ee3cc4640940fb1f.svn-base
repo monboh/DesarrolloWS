@@ -1,0 +1,99 @@
+package co.com.ceet.m2.cargadorxml.util;
+
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+import co.com.pragma.pjr.util.Log;
+
+
+public class ValidateURL {
+	
+	private static String getProjectId() {
+		return "metrocuadrado.portal";
+	}
+	
+	//La validacion ([^\\s]+(\\=(?i)(bdimage))) se realiza solo para las URLs de ColdWell Banker
+	
+	static String urlPattern = "(([^\\s]+(\\.(?i)(jpg|jpeg|png|JPG|JPEG|PNG)))|([^\\s]+(\\=(?i)(bdimage)))$)";
+
+
+	public static boolean valid(String URLName) {
+	      System.out.println("Inicia la validacion");
+		 appendLog("metrocuadradoWS", "Va a valida que la URL tenga la estructura:: "+URLName);
+		if (URLName.matches(urlPattern)) {
+		      System.out.println("Verifica la estructura de la url para saber si es una foto");
+			if (URLName.toLowerCase().contains("http://")
+					|| URLName.toLowerCase().contains("https://")) {
+				System.out.println("Verifica protocolos http:// https://");
+			    try {
+					  appendLog("metrocuadradoWS", "Pasa los filtros de estructura y de protoco http o https");
+				      //HttpURLConnection.setFollowRedirects(false);
+				      // note : you may also need
+					  //HttpURLConnection.setInstanceFollowRedirects(false);
+				      //HttpURLConnection con = (HttpURLConnection) new URL(URLName).openConnection();
+				      
+				      URL u = new URL(URLName); 
+				      System.out.println("Prepara la URL "+u);
+
+				      HttpURLConnection huc =  (HttpURLConnection)  u.openConnection(); 
+				      
+				      huc.setRequestMethod("GET"); 
+				      huc.connect(); 
+				      System.out.println("Respuesta pagina "+huc.getResponseCode());
+				      appendLog("metrocuadradoWS", "Codigo de respuesta:: "+huc.getResponseCode());
+				      appendLog("metrocuadradoWS", "Retorno "+(huc.getResponseCode() == HttpURLConnection.HTTP_OK));
+				      return (huc.getResponseCode() == HttpURLConnection.HTTP_OK);
+
+				      
+				      //con.setRequestMethod("HEAD");
+				      //appendLog("metrocuadradoWS", "Codigo ce respuesta:: "+con.getResponseCode());
+				      //System.out.println(con.getResponseCode());
+				      //appendLog("metrocuadradoWS", "Retorno "+(con.getResponseCode() == HttpURLConnection.HTTP_OK));
+				      //return (con.getResponseCode() == HttpURLConnection.HTTP_OK);
+				    }
+				    catch (Exception e) {
+				      //appendLog("metrocuadradoWS", "Error al verificar la URL:: "+e.getMessage());
+				      System.out.println(e.getMessage());
+				      e.printStackTrace();
+				      return false;
+				    }
+			} else
+				return true;
+		} else
+			return false;
+
+	}
+	
+	
+	 public static void main(String[] args) {
+	        //El código que iniciará nuestra aplicación		 
+		 System.out.println("1 "+valid("http://181.48.29.140:90/M2FOTOS/61982afachada1.JPG"));
+		 System.out.println("2 "+valid("http://www.escobarsalamanca.net/imagenesInmuebles/"));
+		 System.out.println("3 "+valid("http://www.escobarsalamanca.net/imagenesInmuebles/idInm1006_870X400IMG_0022.jpg"));
+		 System.out.println("4 "+valid("http://files.cblatam.com/img/_specialgeneratedimage.jpg?parameters=width=640$height=480$idArchivo=730947$bgColor=Transparent$type=bdimage"));
+		 /*System.out.println("4"+valid("http://images01.olx.com.co/ui/4/37/99/70462899_5-VENTAPERMUTA-INMUEBLE-Inmuebles-y-Propiedades.jpg"));
+		 System.out.println("5"+valid("http://m2.11870.com/multimedia/imagenes/inmuebles-martinez-guillen_pxl_5663780630e7a539dce0bc1137c5fa30.jpeg"));
+		 System.out.println("6"+valid("http://farm2.static.flickr.com/1064/1393050066_a17957a381_o.jpg"));
+		 System.out.println("7"+valid("http://www.capital.com.pa/wp-content/uploads/2012/07/inmueble.jpg"));
+		 System.out.println("8"+valid("http://safe-img01.olx.com.mx/ui/7/85/92/1284765992_121788392_2-Excelente-precio-de-departamentos-lujosos-en-Playa-Del-Carmen-del-lado-del-mar-Solidaridad-1284765992.jpg"));
+		 System.out.println("9"+valid("http://images03.olx.com.ar/ui/4/65/72/72206372_3-LUXURY-APARTMENTS-IN-PUERTO-MADERO-DEPARTAMENTOS-LUJOSOS-TEMPORARIOS-CONFORT-y-SEGURIDAD-Puerto-Madero.jpg"));
+		 System.out.println("10"+valid("http://bimg1.mlstatic.com/hermosa-finca-con-cabana-y-fauna-sin-contaminacion_MCO-F-4353358581_052013.jpg"));
+		 System.out.println("11"+valid("http://daluzinmobiliaria.com/images/compra-venta-arriendo-avaluos-permutas-inmuebles.jpeg"));
+		 System.out.println("12"+valid("http://www.todoavatar.com/wp-content/uploads/2011/01/wallpapers_ciudades_25-1920x1080.jpg"));
+		 System.out.println("13"+valid("http://www.fondos7.net/wallpaper-original/wallpapers/edificios-gigantes-modernos-8617.jpg"));
+		 System.out.println("14"+valid("http://www.fondos7.net/wallpaper-original/wallpapers/modelos-de-edificios-3d-7570.jpg"));
+		 System.out.println("15"+valid("http://www.arqhys.com/comunidad/wp-content/uploads/2012/02/Rascacielos-fotos.jpg"));
+		 System.out.println("16"+valid("http://www.fondosypantallas.com/wp-content/uploads/2010/08/ph-10231.jpg"));
+		 System.out.println("17"+valid("http://fotos.fotoseimagens.etc.br/Predio7.jpg"));
+		 */
+	 }
+	 	
+	 
+	 
+	private static void appendLog(String logname, String message) {
+		Log.append(getProjectId(), logname, message);
+	}
+
+	
+
+}

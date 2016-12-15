@@ -1,0 +1,32 @@
+package co.com.ceet.m2.cargadorxml.collections;
+
+import java.util.HashSet;
+import java.util.TreeSet;
+
+import co.com.ceet.m2.cargadorxml.model.Foto;
+
+/**
+ *
+ * @author Jaime Alfredo Bonilla Perez jaimebp@gmail.com
+ */
+public class Fotos extends  HashSet<Foto>{
+	
+    /**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	static final String XMLHEADER = "<Registros xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">";
+    static final String XMLFOOTER = "</Registros>";
+	
+    public String toXML() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(XMLHEADER);
+
+        for (Foto item : this) {
+            sb.append(item.toXML() + "\n");
+        }
+        sb.append(XMLFOOTER);
+        return sb.toString();
+    }
+	
+}

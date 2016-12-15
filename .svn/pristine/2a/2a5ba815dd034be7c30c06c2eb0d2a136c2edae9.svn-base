@@ -1,0 +1,3514 @@
+package co.com.ceet.m2;
+
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+import co.com.ceet.herramientas.ws.ClienteBarriosComunes;
+import co.com.ceet.m2.cargadorxml.base.ImageUploader;
+import co.com.ceet.m2.cargadorxml.collections.Fotos;
+import co.com.ceet.m2.cargadorxml.collections.Util;
+import co.com.ceet.m2.cargadorxml.model.Foto;
+import co.com.ceet.m2.cargadorxml.util.ValidateURL;
+import co.com.mapas.m2.services.InmuebleUbicadoDTO;
+import co.com.mapas.m2.services.MetrocuadradoGeoServiceProxy;
+import co.com.m2.MWebServiceLog;
+import co.com.m2.services.inmuebles.SingletonWS;
+import co.com.pragma.m2.AccionNoExisteException;
+import co.com.pragma.m2.Caracteristica;
+import co.com.pragma.m2.DespublicarInmuebleException;
+import co.com.pragma.m2.DireccionErradaException;
+import co.com.pragma.m2.DireccionExistenteException;
+import co.com.pragma.m2.DireccionNoExisteEnGisException;
+import co.com.pragma.m2.Importacion;
+import co.com.pragma.m2.Inmueble;
+import co.com.pragma.m2.InmuebleNoExisteException;
+import co.com.pragma.m2.InmuebleNoPerteneceException;
+import co.com.pragma.m2.MCiudades;
+import co.com.pragma.m2.MFotos;
+import co.com.pragma.m2.MInmuebles;
+import co.com.pragma.m2.MMembresias;
+import co.com.pragma.m2.MOrdenesDeCompra;
+import co.com.pragma.m2.MRegiones;
+import co.com.pragma.m2.MUsuarios;
+import co.com.pragma.m2.MWebService;
+import co.com.pragma.m2.MembresiaVencidaException;
+import co.com.pragma.m2.TipoCaracteristica;
+import co.com.pragma.m2.TipoDeRegistroIncorrectoException;
+import co.com.pragma.pjr.db.JDBCConnectionManager;
+import co.com.pragma.pjr.security.User;
+import co.com.pragma.pjr.security.UserNotFoundException;
+import co.com.pragma.pjr.util.Log;
+import co.com.pragma.pjr.util.PJRString;
+import co.com.pragma.pjr.util.ProjectsManager;
+
+
+/**
+ * <p> * Title: Proyecto Metrocuadrado.com * </p>
+ * <p> * Description: Web Service Metrouadrado.com * </p>
+ * <p> * Copyright: Copyright (c) 2006 * </p>
+ * <p> * Company: Metrocuadrado.com * </p>
+ * 
+ * @author Carlos Mario Quintero Abuchar
+ * @version 1.0
+ */
+
+public class GeocodeWS extends ImageUploader  {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	private Connection connection = null;
+	
+	private enum CiudadesPrincipales{
+		
+		ARMENIA(11,"Armenia"),
+		BARRANQUILLA(5,"Barranquilla"),
+		BOGOTA(1,"Bogotá D.C."),
+		BUCARAMANGA(6,"Bucaramanga"),
+		CALI(4,"Cali"),
+		CARTAGENA(7,"Cartagena de Indias"),
+		MANIZALEZ(9,"Manizalez"),
+		MEDELLIN(3,"Medellín"),
+		PEREIRA(10,"Pereira"),
+		SANTAMARTA(15,"Santa Marta");
+		
+		private int id;
+		private String ciudad;
+		
+		CiudadesPrincipales(int id, String ciudad){
+			this.id = id;
+			this.ciudad = ciudad;
+		}
+		
+		public String getCiudad(){
+			return ciudad;
+		}
+		
+		public int getId(){
+			return id;
+		}
+		
+	}
+	
+	/**
+	 * Mensajes retornados desde el WS cuando se consume un metodo
+	 * 
+	 * @author geotor
+	 */
+	private enum MensajeRespuesta{
+		
+		MAXIMO_NUMERO_INTENTOS("mensaje,llego al maximo numero de intentos permitidos diarios"),
+		DIRECCION_YA_EXISTE_REPUBLICACION("mensaje,intentando republicar: Direccion ya existe"),
+		DIRECCION_YA_EXISTE_PUBLICACION("mensaje,Intentando publicar: direccion ya existe"),
+		ACCION_NO_DEFINIDA("mensaje,Falta definir accion,Publicar o Despublicar"),
+		DIRECCION_NO_EXISTE_GIS("mensaje,direccion no existe en el GIS"),
+		USUARIO_INVALIDO("error,usuario invalido"),
+		USUARIO_EXCEDIO_PETICIONES_DIARIAS("error,el usuario excedio el nuemero de peticones diarias,solo puede realizar 300 peticiones por dia"),
+		USUARIO_MEMBRESIA_VENCIDA("error,Usuario con membresia vencida comuniquese con Metrocuadrado"),
+		USUARIO_NO_AUTORIZADO_PARA_WS("error,El usuario no tiene permisos de Web Service comuniquese con Metrocuadrado"),
+		USUARIO_MEMBRESIA_SIN_PERMISOS_AGENTE("mensaje,El usuario tiene una membresia que no permite asociar agentes inmobiliarios"),
+		CLAVE_INVALIDA("error,clave invalida"),
+		LONGITUD_INVALIDA_CODIGO_INMUEBLE("mensaje,El codigo del inmueble no puede superar los 15 caracteres"),
+		LONGITUD_INVALIDA_COMENTARIO_INMUEBLE("mensaje,El comentario del inmueble no puede superar los 500 caracteres"),
+		INMUEBLE_SIN_DIRECCION("mensaje,El inmueble no tiene el campo 'direccion' y se encuentra en una ciudad principal."),
+		INMUEBLE_SIN_TIPONEGOCIO("mensaje,Uno o los dos parametros (sevende y searienda) debe estar en 'S'"),
+		INMUEBLE_SIN_COMENTARIO("el campo 'comentariopublicacion' |"),
+		INMUEBLE_SIN_TIEMPOCONSTRUIDO("el campo 'tiempoConstruido' utilice los siguientes valores (SOBREPLANO, ENCONSTRUCCION, PARAESTRENAR, REMODELADO, ENTRE0Y5ANOS, ENTRE5Y10ANOS, ENTRE10Y20ANOS, MASDE20ANOS) |"),
+		INMUEBLE_SIN_VALORARRIENDO("el campo 'valorArriendo' solo numeros enteros |"),
+		INMUEBLE_SIN_VALORVENTA("el campo 'valorVenta' solo numeros enteros |"),
+		INMUEBLE_ACTUALIZADO("mensaje,Inmueble actualizado"),
+		INMUEBLE_NO_ACTUALIZADO("mensaje,No se pudo actualizar el inmueble"),
+		INMUEBLE_PUBLICADO("mensaje,inmueble publicado"),
+		INMUEBLE_NO_PUBLICADO("mensaje,inmueble NO publicado"),		
+		INMUEBLE_REPUBLICADO("mensaje,inmueble republicado"),
+		INMUEBLE_RESTRINGIDO_MENOS_DE_30_DIAS("mensaje, inmueble no publicado, ya que no supera los 30 dias de haber sido publicado la ultima vez."),
+		INMUEBLE_NO_REPUBLICADO("mensaje,inmueble NO republicado"),
+		INMUEBLE_NO_PERTENECE("mensaje,este inmueble no le pertenece"),
+		INMUEBLE_DESPUBLICADO("mensaje,El inmueble se ha despublicado"),
+		INMUEBLE_NO_DESPUBLICADO("mensaje,No puede despublicar un inmueble que no esta publicado"),
+		INMUEBLE_NO_EXISTE("mensaje,El inmueble no existe en Metrocuadrado"),
+		INMUEBLE_ESTA_ELIMINADO("mensaje,El inmueble se encuentra eliminado comuniquese con Metrocuadrado"),
+		INMUEBLE_NO_ESTA_PUBLICADO("mensaje,No puede despublicar un inmueble que no esta publicado"),
+		INMUEBLE_NO_ESTA_ELIMINADO("mensaje,No puede recuperar un inmueble que no esta encuentra eliminado."),
+		INMUEBLE_CON_FOTOS_RECIENTES("mensaje,Hace menos de 48 horas se recibieron fotos de este inmueble debe esperar este tiempo para volver a procesar nuevas fotos."),
+		INMUEBLE_RECUPERADO("mensaje,El inmueble se ha recuperado.");			
+		
+		private int codigo;
+		private String mensaje;
+		
+		private MensajeRespuesta(String mensaje) {
+			this.mensaje = mensaje;
+		}
+		
+		public String getMensaje(){
+			return mensaje;
+		}
+		
+		private void setMensaje(String mensaje){
+			this.mensaje = mensaje;
+		}
+		
+		public int getCodigo(){
+			return codigo;
+		}
+		
+		@Override
+		public String toString() {
+			return getMensaje();
+		}
+		
+	}
+
+	private Connection getConeccion() {
+		Connection c = null;
+		try {
+			c = getConnection();
+		} catch (Exception ex) {
+		}
+		return c;
+	}	
+	
+	/**
+	 * Retorna el nombre del pool que se debe utilizar para obtener las
+	 * conexiones.
+	 */
+	private String getPoolName() {
+		return "m2";
+	}
+
+	private String getProjectId() {
+
+		return "metrocuadrado.portal";
+
+	}
+
+	public String reiniciar(String usuario, String clave, String accion) {
+		String retorno = "no pudo reiniciar";
+		if ("carabu".equals(usuario))
+			if ("carlitos".equals(clave)) {
+				if (accion.equals("disponible")) {
+					setPuedeEnviar(true);
+				} else if (accion.equals("no_disponible")) {
+					setPuedeEnviar(false);
+				}
+				retorno = "puede enviar = " + puedeEnviar();
+			}
+		return retorno;
+	}
+
+	private void setPuedeEnviar(boolean enviar) {
+		SingletonWS s1 = SingletonWS.getInstance();
+		s1.setPuedeEnviar(enviar);
+	}
+
+	private void insertarPeticion() {
+		SingletonWS s1 = SingletonWS.getInstance();
+		s1.insertarPeticion();
+		appendLog("metrocuadradoWS", "ocupando: numero de peticiones actuales:"
+				+ String.valueOf(getPeticionesActuales()));
+	}
+
+	private void liberarPeticion() {
+		SingletonWS s1 = SingletonWS.getInstance();
+		s1.liberarPeticion();
+		appendLog("metrocuadradoWS",
+				"liberando: numero de peticiones actuales:"
+						+ String.valueOf(getPeticionesActuales()));
+	}
+	public String version(){
+		return "WebServices Metrocuadrado.com Version 1.03";
+	}
+
+	private int getPeticionesActuales() {
+		SingletonWS s1 = SingletonWS.getInstance();
+		return s1.getPeticionesActuales();
+	}
+	
+	
+	private InmuebleUbicadoDTO geocodificarDireccionSinGuardarBD(
+			String idInmueble, String direccion, int idCiudad) 
+			throws Exception {
+		appendLog("metrocuadradoWS", "Entra a geocodificarDireccionSinGuardarBD");
+		MetrocuadradoGeoServiceProxy m2 = new MetrocuadradoGeoServiceProxy();
+		InmuebleUbicadoDTO iuDTO = new InmuebleUbicadoDTO();
+		try {
+			System.out.println("m2:ruta: " + m2.getEndpoint());
+			iuDTO = m2.ubicarInmuebleSinGuardarEnBd(idInmueble, direccion,
+					Integer.valueOf(idCiudad));
+			
+			appendLog("metrocuadradoWS", " => Geocodificando Direccion sin Guardar en BD");
+			appendLog("metrocuadradoWS", "IdCiudad           : " + idCiudad);
+			appendLog("metrocuadradoWS", "Barrio             : " + iuDTO.getBarrio());
+			appendLog("metrocuadradoWS", "Tipo de Ubicacion  : " + iuDTO.getTipoDeUbicacion());
+			appendLog("metrocuadradoWS", "Direccion Estandar : " + iuDTO.getDireccionEstandar());
+			appendLog("metrocuadradoWS", "Municipio          : " + iuDTO.getMunicipio());
+			appendLog("metrocuadradoWS", "Sector             : " + iuDTO.getSector());
+			appendLog("metrocuadradoWS", "Zona               : " + iuDTO.getZona());
+			appendLog("metrocuadradoWS", "IdZona             : " + iuDTO.getIdZona());
+			appendLog("metrocuadradoWS", "Fecha              : " + iuDTO.getFecha());
+			appendLog("metrocuadradoWS", "Estrato            : " + iuDTO.getEstrato());
+			appendLog("metrocuadradoWS", "Y = Latitud        : " + iuDTO.getY());
+			appendLog("metrocuadradoWS", "X = Longitud       : " + iuDTO.getX());
+			
+		} catch (Exception e) {
+			String mensajeError = "fallo envio ws: " + e.getMessage() + ", completo: " +
+								  e.toString().replace("candidatos:", "Sugerencia de direccion correcta:");
+			appendLog("metrocuadradoWS", mensajeError);
+			String mensajeRespuesta = e.toString().replace("candidatos:","Sugerencia de direccion correcta:");
+		    iuDTO.setMensajeRespuesta(mensajeRespuesta);
+			throw new DireccionNoExisteEnGisException(mensajeRespuesta);
+		    //return iuDTO;
+
+		}
+		return iuDTO;
+	}
+
+	/**
+	 * Esta funcion valida la direccion en el sistema de Metrocuadrado.com
+	 * 
+	 * @param country
+	 *            pais donde pertenece la direccion
+	 * @param city
+	 *            ciudad donde pertenece la direccion
+	 * @param address
+	 *            direccion a validar
+	 * @return hashMap con los campos de la ubicacion de la direccion
+	 * @throws Exception
+	 */
+	private HashMap validarDireccion(String country, String city, String address, int visitorId, String metodo, String idCiudad) throws Exception {
+		
+		appendLog("metrocuadradoWS", "entro a validarDireccion Nuevo");
+		
+		//MProcalculo mp = new MProcalculo(connection);
+		
+		appendLog("metrocuadradoWS", "en medio");
+		int idCiudad2 = Integer.parseInt(idCiudad);
+			
+		appendLog("metrocuadradoWS", "idCiudad:" + idCiudad2);
+		//appendLog("metrocuadradoWS", "idInmueble: " + idInmueble);
+		appendLog("metrocuadradoWS", "Despues de crear el xml");
+		//doc = mp.validarDireccionProcalculo("GERGOM", address, idCiudad2);
+		appendLog("metrocuadradoWS", "Despues de invocar el metodo de direccion procalculo");
+			
+		
+		HashMap datos = new HashMap();
+		
+		InmuebleUbicadoDTO iuDTO = new InmuebleUbicadoDTO();
+		
+		iuDTO = geocodificarDireccionSinGuardarBD("965-18606", address, idCiudad2);
+		
+		String mensajeRespuesta = iuDTO.getMensajeRespuesta(); 
+		
+		if(mensajeRespuesta == null || iuDTO.getMensajeRespuesta().equalsIgnoreCase("")){
+			
+			String errorCode = "0";		
+			String matchCount = "1";
+			String latitud = "";
+			String longitud = "";
+			
+			datos.put("error_code", errorCode);
+			datos.put("match_count", matchCount);
+			
+			
+			if (errorCode.equals("0") && !matchCount.equalsIgnoreCase("0")) {
+				
+				longitud = String.valueOf(iuDTO.getX());
+				latitud = String.valueOf(iuDTO.getY());
+				
+				datos.put("longitud", longitud);
+				datos.put("latitud", latitud);
+				
+				appendLog("metrocuadradoWS", "longitud error: " + longitud);
+				appendLog("metrocuadradoWS", "latitud error: " + latitud);
+				
+
+			}		
+			 
+			String score = "100.0"; 
+			datos.put("score", score);
+			appendLog("metrocuadradoWS", "score XML: " + score);
+			
+			String outputAddress = iuDTO.getDireccionOriginal();
+			datos.put("output_address",	outputAddress);
+			appendLog("metrocuadradoWS", "output_address XML: " + outputAddress);
+			
+			String zonaId = iuDTO.getIdZona().toString();		
+			datos.put("zona_id", zonaId);
+			appendLog("metrocuadradoWS", "zona_id XML: " + zonaId);
+			
+			String zonaNombre = iuDTO.getZona();
+			datos.put("zona_nombre", zonaNombre);
+			appendLog("metrocuadradoWS", "zona_nombre XML: " + zonaNombre);
+			
+			String sectorId = iuDTO.getIdSector().toString();
+			datos.put("sector_id", sectorId);
+			appendLog("metrocuadradoWS", "sector_id XML: " + sectorId);
+			
+			String sectorNombre = iuDTO.getSector();
+			datos.put("sector_nombre", sectorNombre);
+			appendLog("metrocuadradoWS", "sector_nombre XML: " + sectorNombre);
+			 
+			String barrioId = "0.0";
+			datos.put("barrio_id", barrioId);
+			appendLog("metrocuadradoWS", "barrio_id XML: " + barrioId);
+			
+			String barrioNombre = iuDTO.getBarrio();
+			datos.put("barrio_nombre", barrioNombre);
+			appendLog("metrocuadradoWS", "barrio_nombre XML: " + barrioNombre);
+
+			appendLog("metrocuadradoWS", "salio del metodo de recuperacion XML");
+			
+			mensajeRespuesta = "0";
+			datos.put("mensajeRespuesta", mensajeRespuesta);
+			appendLog("metrocuadradoWS", "mensajeRespuesta IF: " + mensajeRespuesta);
+
+			
+			//return datos;
+			
+			
+		}else{
+			
+			datos.put("mensajeRespuesta", mensajeRespuesta);
+			appendLog("metrocuadradoWS", "mensajeRespuesta Else: " + mensajeRespuesta);
+			throw new DireccionNoExisteEnGisException(mensajeRespuesta);
+			
+		}
+		return datos; 
+		
+	}
+  
+	private boolean verificarPermisoInmueble(String idInmueble, int visitorId)
+			throws Exception {
+
+		Inmueble inmueble = null;
+
+		inmueble = new Inmueble(connection, idInmueble);
+		if (inmueble == null) {
+			inmueble.close();
+			throw new InmuebleNoExisteException("mensaje,El inmueble " + idInmueble
+					+ " no existe");
+		}
+
+		if (Integer.parseInt(inmueble.getString("visitorid")) != visitorId) {
+			appendLog("metrocuadradoWS", "El inmueble " + idInmueble
+					+ " no fue ingresado por usted");
+			inmueble.close();
+			throw new InmuebleNoPerteneceException("El inmueble " + idInmueble
+					+ " no fue ingresado por usted");
+		}
+		inmueble.close();
+
+		return true;
+	}
+
+	/**
+	 * Semaforo para enviar inmuebles en lote
+	 * 
+	 * @return
+	 */
+	public boolean puedeEnviar() {
+		SingletonWS s1 = SingletonWS.getInstance();
+		return s1.puedeEnviar();
+	}
+
+	/**
+	 * Convierte un String en un Hashmap.
+	 * 
+	 * @exception TipoDeRegistroIncorrectoException
+	 *                Cuando el registro esperado es diferente a lo esperado.
+	 */
+	private HashMap convertirAHashMapInmueble(String datos)
+			throws TipoDeRegistroIncorrectoException {
+
+		HashMap registro = null;
+		String[] variablesYdatos = PJRString.split(datos, ";");
+
+		if (variablesYdatos == null) {
+			throw new TipoDeRegistroIncorrectoException(
+					"No hay datos para introducir");
+		}
+
+		registro = new HashMap(variablesYdatos.length);
+		String[] variables = null;
+		String variableNombre = "";
+		String variableValor = "";
+		String aux = "";
+		for (int i = 0; i < variablesYdatos.length; i++) {
+			variables = PJRString.split(variablesYdatos[i].toString(), ",");
+			if (variables.length > 0) {
+				variableNombre = variables[0].toString();
+				appendLog("metrocuadradoWS", "Nombre Variable: " + variableNombre + " Posicion: " + i);
+				variableValor = variables[1].toString().replaceAll("#", "No.");
+				appendLog("metrocuadradoWS", "Valor Variable: " + variableValor + " Posicion: " + i);
+				
+				if (variableNombre.equalsIgnoreCase("comentariopublicacion")) {
+					variableValor = PJRString.replace(formatearNumerosComentario(variableValor), "|", ",");
+				}
+				if (variableNombre.equalsIgnoreCase("tiempoConstruido")) {
+					String tiempoConstruido = obtenerTiempoConstruido(variableValor);
+					appendLog("metrocuadradoWS","Tiempo Construido "+tiempoConstruido);
+					if(tiempoConstruido != "") variableValor=tiempoConstruido;
+					appendLog("metrocuadradoWS","variableValor "+variableValor);
+				}
+				registro.put(variableNombre, variableValor);
+			}
+		}
+		
+		return registro;
+	}
+
+/**
+ * Valida que el comentario de publicacion contenga maximo 5 valores numericos	
+ * @param comentario
+ * @return
+ */
+	
+private String formatearNumerosComentario(String comentario){
+	appendLog("metrocuadradoWS","Comentario a formatear:: "+comentario);
+	 String comentarioPublicacion = "";
+	 int i=0;
+    for (short indice = 0; indice < comentario.length(); indice++){	
+   	 char caracter = comentario.charAt(indice);
+   	 if(isNumeric(caracter)){
+   		 i++;
+   		 if(i<=5){
+   			comentarioPublicacion += caracter;  
+   		 }
+   	 }
+   	 else{
+   		comentarioPublicacion += caracter;
+   	 }
+    }
+    appendLog("metrocuadradoWS","Comentario Final :: "+comentarioPublicacion);
+    return comentarioPublicacion;	 		
+}
+
+
+
+/**
+ * Valida si el caracter que entra es numerico
+ * @param caracter
+ * @return
+ */
+private boolean isNumeric(char caracter){
+try {
+	 Integer.parseInt(String.valueOf(caracter));
+	 	return true;
+	 } catch (NumberFormatException ex){
+		 return false;
+	 }
+}
+	
+	/**
+	 * Actualiza un inmueble.
+	 * 
+	 * @param reg
+	 *            El registro que ser� actualizado
+	 * @param inmueble
+	 *            El inmueble que ser� actualizado.
+	 * @exception Exception
+	 *                Si ocurre alg�n error haciendo la actualizaci�n.
+	 */
+	private String actualizarInmueble(int visitorId, String idInmueble,
+			HashMap reg) throws Exception {
+		
+		int accion = 1;// 1 actualizar , 2 despublicar, 3 republicar;
+		String retorno1 = "";
+		String retorno2 = "";
+
+		String tipoOperacion = reg.get("AccionPublicacion").toString();
+		appendLog("metrocuadradoWS", "AccionPublicacion "+tipoOperacion);
+		MInmuebles mi = new MInmuebles(connection);
+		
+		Inmueble inmueble = new Inmueble(connection, idInmueble);
+		String estapublicado = inmueble.getString("estaPublicado");
+		
+		int idTipoInmueble = Integer.parseInt(reg.get("idTipoInmueble").toString());
+		
+		if (tipoOperacion.equalsIgnoreCase("Despublicar")) {
+			if(!estapublicado.equals("N")){
+				appendLog("metrocuadradoWS", "Va a despublicar el inmueble "+idInmueble);			
+				try {
+					sePuedeDespublicar(idInmueble);
+				} catch (InmuebleNoExisteException ex) {
+					throw new DespublicarInmuebleException("El inmueble " + idInmueble	+ " no se puede despublicar porque no esta publicado");
+				}
+				accion = 2;
+				mi.despublicar(idInmueble, "", visitorId);
+				appendLog("metrocuadradoWS", "inmueble despublicado");
+				connection.commit();
+			}
+			else{
+				appendLog("metrocuadradoWS", "El inmueble "+idInmueble+" ya esta despublicado.");			
+				inmueble.close();
+				return MensajeRespuesta.INMUEBLE_NO_DESPUBLICADO.toString();
+			}
+			
+		} else if (tipoOperacion.equalsIgnoreCase("Publicar") || tipoOperacion.equalsIgnoreCase("Actualizar")) {
+			appendLog("metrocuadradoWS", "Inmueble para publicar "+idInmueble);			
+			accion 					= 1; 	// actualizar
+			String idCiudad 		= reg.get("idCiudad").toString();	
+			appendLog("metrocuadradoWS", "idCiudad "+idCiudad);			
+			//Inmueble inmueble 		= null;
+			boolean estaVigente 	= false;
+			//String estapublicado 	= "";
+			HashMap generales 		= null;
+			reg.remove("AccionPublicacion");
+			
+			//inmueble = new Inmueble(connection, idInmueble);
+			if (Integer.parseInt(inmueble.getString("visitorid")) != visitorId) {
+				appendLog("metrocuadradoWS", "El inmueble " + idInmueble + " no fue ingresado por usted");
+				inmueble.close();
+				throw new InmuebleNoPerteneceException("El inmueble " + idInmueble + " no fue ingresado por usted");
+			}
+
+			estaVigente 			= inmueble.estaVigente();
+			String direccionActual = inmueble.getString("direccion");			
+			generales 				= mi.filtrarDatosGenerales(reg);
+			generales.remove("barrio");
+			inmueble.close();
+
+			if ( !(!estaVigente || estapublicado.equals("N")) ) {
+				// remueve la direccion a actualizar ya que no es posible que cambie
+				generales.remove("direccion");
+			}
+
+			//Codigo Edwin
+			//actualizarCaracteristicasGenerales(idInmueble, generales);
+			appendLog("metrocuadradoWS", "Va a publicar el inmueble "+idInmueble);
+			
+			
+			
+			mi.actualizarCaracteristicasGenerales(idInmueble, generales);
+			//Ya lo hace en actualizarCaracteristicasGenerales  mi.actualizarEnSolr(idInmueble);
+			mi.actualizarOtrosDatos(reg.get("idInmueble").toString(), reg);
+			mi.actualizarTipoNegocio(idInmueble);
+			
+			
+			appendLog("metrocuadradoWS","1. Va a actualizar el nro de periodos a republicar el inmueble ...->  "+idInmueble);
+			mi.actualizarNroPeriodos(idInmueble);
+			appendLog("metrocuadradoWS","3. Actualizo nro de periodos a republicar el inmueble fin!>");
+			
+			
+			reg.put("idCiudad", idCiudad);
+			
+			/**
+			 * 
+			 *	 SI VA A REPUBLICAR EL INMUEBLE
+			 * 
+			 */
+			if (tipoOperacion.equals("Publicar") && (!estaVigente || estapublicado.equals("N"))) {
+
+				accion = 3;
+
+				/**
+				 * Geocodificar direccion
+				 */
+				int idCiudad2 = Integer.parseInt(idCiudad);	
+				
+				MWebServiceLog MWebServiceLog = new MWebServiceLog(connection);
+				
+				if(MWebServiceLog.verificarRestriccionDias(idInmueble)){
+
+					return MensajeRespuesta.INMUEBLE_RESTRINGIDO_MENOS_DE_30_DIAS.toString();
+
+				}
+				
+				//validara si el inmueble ya tiene zonificacion, si reporta TRUE no es necesario volver a validar direccion
+				boolean traeSector = false;
+				traeSector = inmueble.traerSector();				
+					
+					// Zonificacion del inmueble
+					if(esCiudadPrincipal(idCiudad2)){
+						//si la variable retorna false se zonificara
+						if (!traeSector){
+							appendLog("metrocuadradoWS", "Va a zonificar");
+							
+							if(reg.get("direccion") != null){
+								String direccion = reg.get("direccion").toString().toLowerCase();
+								appendLog("metrocuadradoWS", "Ciudad principal actualizar inmueble");
+								InmuebleUbicadoDTO inmuebleUbicado = geocodificarDireccionSinGuardarBD(idInmueble, direccion, idCiudad2);
+								if(inmuebleUbicado != null){
+									String barrio 		= inmuebleUbicado.getBarrio();
+									int idZona			= inmuebleUbicado.getIdZona();
+									int	idSector		= inmuebleUbicado.getIdSector();
+									double latitud		= inmuebleUbicado.getY();
+									double longitud		= inmuebleUbicado.getX();
+									appendLog("metrocuadradoWS", "Zonificando datos del inmueble ");
+									mi.actualizarDireccionWebService(idInmueble, direccion, barrio, idZona, idSector, latitud, longitud);
+									retorno2 = "score,"+inmuebleUbicado.getScore()+";";
+									retorno2 += "zona_nombre," + inmuebleUbicado.getZona()+ ";";
+									retorno2 += "sector_nombre," + inmuebleUbicado.getSector()+ ";";
+									retorno2 += "barrio_nombre," + inmuebleUbicado.getBarrio()+ ";"; 
+									retorno2 += "longitud,"+latitud+";";
+									retorno2 += "latitud,"+latitud+";";
+									
+									appendLog("metrocuadradoWS","Geocodifico el inmueble"+ idInmueble+"Respuesta Geocodificacion \n"+retorno2);
+								}
+								else if(inmuebleUbicado.getMensajeRespuesta() != ""){
+									appendLog("metrocuadradoWS", "mensajeRespuesta Else: " + inmuebleUbicado.getMensajeRespuesta());
+									throw new DireccionNoExisteEnGisException(inmuebleUbicado.getMensajeRespuesta());
+								}
+									appendLog("metrocuadradoWS","Va a verificar direccion exitente.");
+									mi.verificarDireccion(reg.get("idInmueble").toString(),	idTipoInmueble, reg, visitorId);
+								}
+								else{
+									return MensajeRespuesta.INMUEBLE_SIN_DIRECCION.toString();
+								}
+							
+							}
+						else{
+							appendLog("metrocuadradoWS", "No va a volver a zonificar, inmueble ya que tiene un sector asociado");
+						}
+					}
+					
+				appendLog("metrocuadradoWS","Direccion no existe .");
+				generales = mi.filtrarDatosGenerales(reg);
+				
+				mi.actualizarFechaPublicacionExpiracionDelInmueble(reg.get("idInmueble").toString());
+								
+				borrarOrdenesCompra(idInmueble);
+				generarOrdenCompra(idInmueble, visitorId);// genera ordenes de compra para la republicacion
+			}
+			connection.commit();
+			
+			appendLog("metrocuadradoWS", "Va a validar si el barrio es comun:::::::");
+			// TODO: Codigo Normalizacion actualizacion
+			
+			if(esCiudadPrincipal(Integer.parseInt(idCiudad)) && reg.containsKey("nombreComunBarrio")){
+				if(!reg.get("nombreComunBarrio").toString().isEmpty()){
+				    try {
+				    	String idBarrioComun = "0";
+				        String barrioIngresado = reg.get("nombreComunBarrio").toString();
+				        String validarBarrio = "S";
+				        String rst = "";	
+				    	rst = ClienteBarriosComunes.validarBarrios(barrioIngresado, idInmueble, idBarrioComun, validarBarrio);
+				    	System.out.println("Response ClienteBarriosComunes: " + rst);
+				    	appendLog("metrocuadradoWS", "Response ClienteBarriosComunes: " + rst);
+				    	//GERGOM - BarriosComunes
+					} catch (Exception e) {
+						appendLog("metrocuadradoWS", "Exception Barrio comun: " + e.getLocalizedMessage()+"\n"+e.getMessage()+"\n"+e.getCause()+"\n"+e.toString());
+						System.out.println("Exception: " + e.getLocalizedMessage());
+						e.printStackTrace();
+					}
+				}
+			}
+			appendLog("metrocuadradoWS", "Fin de la validacion del barrio comun::::::: " + reg.get("nombreComunBarrio"));
+			
+
+		} else {
+
+			throw new AccionNoExisteException("accion no existe");
+		}
+		if (accion == 1) {
+			retorno1 = MensajeRespuesta.INMUEBLE_ACTUALIZADO.toString();
+			appendLog("metrocuadradoWS", "1. Se actualizo");
+		} else if (accion == 2) {
+			retorno1 = MensajeRespuesta.INMUEBLE_DESPUBLICADO.toString();
+			appendLog("metrocuadradoWS", "2. Se despublico");
+		} else if (accion == 3) {
+			retorno1 = MensajeRespuesta.INMUEBLE_REPUBLICADO.toString();;
+			appendLog("metrocuadradoWS", "3. Se republico");
+		}
+
+		return retorno1 + ";" + retorno2;
+	}
+
+	/**
+	 * Inserta un inmueble en la base de datos.<br>
+	 * Si la ciudad no es en las afueras verifica la direcci�n
+	 * 
+	 * @param reg
+	 *            Los datos del inmueble que ser� insertado.
+	 */
+	private String insertarInmueble(int visitorId, String idInmueble,
+			HashMap reg) throws Exception {
+		// appendLog("metrocuadradoWS", "dentro de insertar inmuebles");
+		// Connection connection = getConeccion();
+		MInmuebles mi = new MInmuebles(connection);
+		MWebServiceLog mwsl = new MWebServiceLog(connection);
+		String retorno = "";
+		String idCiudad = reg.get("idCiudad").toString();
+		int idCiudad2 = Integer.parseInt(idCiudad);
+		
+		
+		int idTipoInmueble = Integer.parseInt(reg.get("idTipoInmueble").toString());
+
+		String nombreCiudad = "";
+		// verifica si pertenece a alguna de las ciudades donde se puede
+		// geocodificar
+		
+		if(esCiudadPrincipal(idCiudad2)){
+		if (reg.get("direccion") != null){
+			String direccion = reg.get("direccion").toString().toLowerCase();
+			InmuebleUbicadoDTO inmuebleUbicado = geocodificarDireccionSinGuardarBD(idInmueble, direccion, idCiudad2);
+			if(inmuebleUbicado != null){
+				try{
+				mi.crear(idInmueble, Integer.parseInt(reg.get("idTipoInmueble").toString()), "S".equals(reg.get("seVende")), "S".equals(reg.get("seArrienda")), Integer.parseInt(reg.get("idCiudad").toString()), visitorId);
+				}
+				catch(Exception e2){
+					appendLog("metrocuadradoWS", "Error en la creacion del inmueble.." + e2.getMessage());
+				}
+				String barrio 		= inmuebleUbicado.getBarrio();
+				int idZona			= inmuebleUbicado.getIdZona();
+				int	idSector		= inmuebleUbicado.getIdSector();
+				double latitud		= inmuebleUbicado.getY();
+				double longitud		= inmuebleUbicado.getX();
+				appendLog("metrocuadradoWS", "Zonificando datos del inmueble ");
+				mi.actualizarDireccionWebService(idInmueble, direccion, barrio, idZona, idSector, latitud, longitud);
+				appendLog("metrocuadradoWS","Geocodifico el inmueble"+ idInmueble);
+				
+				retorno = "score,"+inmuebleUbicado.getScore()+";";
+				retorno += "zona_nombre," + inmuebleUbicado.getZona()+ ";";
+				retorno += "sector_nombre," + inmuebleUbicado.getSector()+ ";";
+				retorno += "barrio_nombre," + inmuebleUbicado.getBarrio()+ ";"; 
+				retorno += "longitud,"+latitud+";";
+				retorno += "latitud,"+latitud+";";
+				
+				appendLog("metrocuadradoWS","Respuesta Geocodificacion \n"+retorno);
+			}
+			else{
+				appendLog("metrocuadradoWS", "mensajeRespuesta Else: " + inmuebleUbicado);
+				throw new DireccionNoExisteEnGisException(inmuebleUbicado.getMensajeRespuesta());
+			}
+			appendLog("metrocuadradoWS","Va a verificar direccion exitente.");
+			mi.verificarDireccion(reg.get("idInmueble").toString(),	idTipoInmueble, reg, visitorId);
+		}
+			else{
+				throw new InmuebleNoExisteException(MensajeRespuesta.INMUEBLE_SIN_DIRECCION.toString());
+			}
+		}
+		else{
+			mi.crear(idInmueble, Integer.parseInt(reg.get("idTipoInmueble").toString()), "S".equals(reg.get("seVende")), "S".equals(reg.get("seArrienda")), Integer.parseInt(reg.get("idCiudad").toString()), visitorId);
+		}
+		
+		appendLog("metrocuadradoWS","Comenzara actualizar el idtipodenegocio para el inmueble  "+idInmueble);
+		mi.actualizarTipoNegocio(idInmueble);
+		
+		appendLog("metrocuadradoWS","1. Va a actualizar el nro de periodos a publicar el inmueble ...->  "+idInmueble);
+		mi.actualizarNroPeriodos(idInmueble);
+		appendLog("metrocuadradoWS","3. Actualizo nro de periodos a publicar el inmueble fin!>");
+		
+		String nroFotos = (String) reg.get("nroFotos");
+		if (nroFotos == null || nroFotos.trim().length() == 0) {
+			reg.put("nroFotos", "0");
+		}
+		// Remover las caracteristicas generales que no aplican
+		reg.remove("AccionPublicacion");
+		reg.remove("estadoInmueble");
+
+		HashMap generales = mi.filtrarDatosGenerales(reg);
+		//Se remueve el caracter barrio que hace referencia al barrio catastral, este valor se debe tomar del servicio de geocodificacion
+		generales.remove("barrio");
+		
+		mi.actualizarCaracteristicasGenerales(reg.get("idInmueble").toString(), generales);
+		mi.actualizarFechaExpiracionDelInmueble(reg.get("idInmueble").toString());
+		mi.actualizarOtrosDatos(reg.get("idInmueble").toString(), reg);
+		connection.commit();
+		appendLog("metrocuadradoWS", "Va a validar si el barrio es comun::::::: ");
+		
+		// TODO: Codigo Normalizacion creacion inmueble
+		if(esCiudadPrincipal(idCiudad2) && reg.containsKey("nombreComunBarrio")){
+			if(!reg.get("nombreComunBarrio").toString().isEmpty()){
+			    try {
+			    	appendLog("metrocuadradoWS", "ClienteBarriosComunes: " + reg.get("nombreComunBarrio").toString());
+			    	String idBarrioComun = "0";
+			        String barrioIngresado = reg.get("nombreComunBarrio").toString();
+			        String validarBarrio = "S";
+			        String rst = "";	
+			    	rst = ClienteBarriosComunes.validarBarrios(barrioIngresado, idInmueble, idBarrioComun, validarBarrio);
+			    	System.out.println("Response ClienteBarriosComunes: " + rst);
+			    	appendLog("metrocuadradoWS", "Response ClienteBarriosComunes: " + rst);
+			    	//GERGOM - BarriosComunes
+				} catch (Exception e) {
+					appendLog("metrocuadradoWS", "Exception Barrio comun: " + e.getLocalizedMessage()+"\n"+e.getMessage()+"\n"+e.getCause()+"\n"+e.toString());
+					System.out.println("Exception: " + e.getLocalizedMessage());
+					e.printStackTrace();
+				}
+		    }
+		}
+		appendLog("metrocuadradoWS", "Fin de la validacion del barrio comun::::::: " + reg.get("nombreComunBarrio"));
+		
+		
+		return retorno;
+	}
+
+	/***
+	 * 
+	 * Realiza el procesamiento de inmueble de acuerdo a las acciones de publicacion 
+	 * correspondientes.
+	 * 
+	 * @param visitorId
+	 * @param accionPublicacion
+	 * @param idInmueble
+	 * @param idTipoInmueble
+	 * @param seVende
+	 * @param seArrienda
+	 * @param idCiudad
+	 * @param caracteristicas
+	 * @return Mensaje String
+	 * @throws InmuebleNoExisteException
+	 * @throws DespublicarInmuebleException
+	 * @throws DireccionExistenteException
+	 * @throws DireccionNoExisteEnGisException
+	 * @throws AccionNoExisteException
+	 * @throws SQLException
+	 * @throws Exception
+	 * 
+	 * @author Edwin Torres
+	 */
+	private String procesarInmueble(int visitorId, String accionPublicacion,
+			String idInmueble, int idTipoInmueble, String seVende,
+			String seArrienda, int idCiudad, String caracteristicas)
+			throws InmuebleNoExisteException, DespublicarInmuebleException,
+			DireccionExistenteException, DireccionNoExisteEnGisException,
+			MembresiaVencidaException, AccionNoExisteException, 
+			SQLException, Exception {
+		
+		int idCiudad2 = idCiudad;
+		
+		// Depuracion de los datos
+		StringBuffer sugerencia = new StringBuffer();
+		
+		int idTipoNegocio = traerIdTipoNegocio(seVende, seArrienda);
+		MInmuebles MInmuebles = new MInmuebles(connection);
+		if( !isLongitudValida(idInmueble) ){
+			return MensajeRespuesta.LONGITUD_INVALIDA_CODIGO_INMUEBLE.toString();
+		}
+		if(inmuebleEliminado(idInmueble)){
+			return MensajeRespuesta.INMUEBLE_ESTA_ELIMINADO.toString();
+		}
+
+		appendLog("metrocuadradoWS", "Caracteristicas : \n " + caracteristicas);
+		
+		String retorno 	= "error,none";
+		caracteristicas = caracteristicas.replaceAll("#", "No.");
+
+		HashMap reg = convertirAHashMapInmueble(caracteristicas);
+		
+		if (reg.get("comentariopublicacion") == null){
+			sugerencia.append(MensajeRespuesta.INMUEBLE_SIN_COMENTARIO);
+		}
+		else if(!isLongitudValidaComentario(reg.get("comentariopublicacion").toString())){
+			return MensajeRespuesta.LONGITUD_INVALIDA_COMENTARIO_INMUEBLE.toString();
+		}
+		if(reg.get("tiempoConstruido") == null){
+			sugerencia.append(MensajeRespuesta.INMUEBLE_SIN_TIEMPOCONSTRUIDO);
+		}
+		if(reg.get("valorHipoteca") != null){
+			reg.put("valorHipoteca", getValor(reg.get("valorHipoteca").toString()));
+		}
+		if(idTipoNegocio != 0){
+			if (idTipoNegocio == 1 || idTipoNegocio == 3){
+				if(reg.get("valorVenta") == null){
+					sugerencia.append(MensajeRespuesta.INMUEBLE_SIN_VALORVENTA);
+					reg.put("valorVenta", "0");
+					appendLog("metrocuadradoWS","Inmueble sin "+sugerencia);
+				}
+				else{
+					reg.put("valorVenta", getValor(reg.get("valorVenta").toString()));
+				}
+			}
+			if (idTipoNegocio == 2 || idTipoNegocio == 3){
+				if(reg.get("valorArriendo") == null){
+					sugerencia.append(MensajeRespuesta.INMUEBLE_SIN_VALORARRIENDO);
+					reg.put("valorArriendo", "0");
+					appendLog("metrocuadradoWS","Inmueble sin "+sugerencia);				}
+				else{
+					reg.put("valorArriendo", getValor(reg.get("valorArriendo").toString()));
+				}
+			}
+		}
+		else{
+			appendLog("metrocuadradoWS","El inmueble no tiene un tipo de negocio.	");
+			return MensajeRespuesta.INMUEBLE_SIN_TIPONEGOCIO.toString();
+		}
+		
+		
+		
+		MWebServiceLog mwsl = new MWebServiceLog(connection);
+
+		/**
+		 * Agregar al Hasmap
+		 */
+		
+		reg.put("AccionPublicacion", accionPublicacion);
+		reg.put("idInmueble", idInmueble);
+		reg.put("idTipoInmueble", String.valueOf(idTipoInmueble));
+		reg.put("seVende", seVende);
+		reg.put("seArrienda", seArrienda);
+		appendLog("metrocuadradoWS", "idCiudad "+idCiudad);
+		reg.put("idCiudad", String.valueOf(idCiudad));
+		//appendLog("metrocuadradoWS", "idCiudad "+reg.get("idICudad").toString());
+		
+
+		try {
+			if (esInmuebleNuevo(reg)) {
+				return "No puede ingresar Proyectos";
+			}
+			retorno = actualizarInmueble(visitorId, idInmueble, reg);
+
+		} catch (AccionNoExisteException e) {
+			retorno = MensajeRespuesta.ACCION_NO_DEFINIDA.toString();
+			
+		} catch (DespublicarInmuebleException e) {
+			retorno = MensajeRespuesta.INMUEBLE_NO_DESPUBLICADO.toString();
+			
+		} catch (DireccionExistenteException e) {
+			retorno = MensajeRespuesta.DIRECCION_YA_EXISTE_REPUBLICACION.toString();
+			
+		} catch (DireccionNoExisteEnGisException e) {
+			appendLog("metrocuadradoWS","Retorno DireccionNoExisteEnGisExceptio"+e.getMessage());
+			retorno = MensajeRespuesta.DIRECCION_NO_EXISTE_GIS.toString()+": 	"+e.getMessage();			
+			mwsl.agregarDireccionErradaGIS(visitorId, idInmueble, reg.get("direccion").toString(), Integer.parseInt(reg.get("idCiudad").toString()));
+			connection.commit();
+			
+		}catch (DireccionErradaException e) {
+			
+			retorno = "mensaje,inmueble consultado varias veces con direccion errada ";
+			mwsl.agregarDireccionErradaGIS(visitorId, idInmueble, reg.get("direccion").toString(), Integer.parseInt(reg.get("idCiudad").toString()));
+			connection.commit();
+			
+		}catch (InmuebleNoPerteneceException e) {
+			
+			retorno = MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+
+		}catch (MembresiaVencidaException e) {
+			
+			retorno = "mensaje,membresia vencida";
+			
+		}
+		catch (InmuebleNoExisteException ex) {
+			
+			// En caso de no existir el inmueble realiza el proceso para insertarlo en base de datos
+			try {
+				String retornoInsertar = "";
+				retornoInsertar = insertarInmueble(visitorId, idInmueble, reg);
+				generarOrdenCompra(idInmueble, visitorId);
+				retorno = "mensaje,inmueble insertado;" + retornoInsertar;
+
+			} catch (DireccionExistenteException e) {
+				retorno = MensajeRespuesta.DIRECCION_YA_EXISTE_PUBLICACION.toString();
+
+			} catch (DireccionNoExisteEnGisException e) {
+				appendLog("metrocuadradoWS","Retorno DireccionNoExisteEnGisException"+e.getMessage());
+				retorno = MensajeRespuesta.DIRECCION_NO_EXISTE_GIS.toString()+e.getMessage();
+				mwsl.agregarDireccionErradaGIS(visitorId, idInmueble, reg.get("direccion").toString(), 
+											   Integer.parseInt(reg.get("idCiudad").toString()));
+				connection.commit();
+				return retorno;
+				
+			} catch (DireccionErradaException e) {
+				retorno = "mensaje,inmueble consultado varias veces con direccion errada ";
+				mwsl.agregarDireccionErradaGIS(visitorId, idInmueble, reg.get("direccion").toString(), Integer.parseInt(reg.get("idCiudad").toString()));
+				connection.commit();
+
+			} catch (MembresiaVencidaException e) {
+				retorno = "mensaje,membresia vencida";
+
+			} catch (Throwable e) {
+				e.printStackTrace();
+				if (e instanceof Exception) {
+					throw (Exception) e;
+				} else {
+					throw new RuntimeException(e);
+				}
+			}
+
+		}
+		if(!sugerencia.toString().isEmpty()){
+			retorno+= "Sugerencia: Hace falta "+sugerencia+" en las caracteristicas del inmueble.";
+		}
+		return retorno;
+	}
+
+	/***
+	 * 
+	 *  Genera la orden de compra para los inmuebles insertados.
+	 * 	 
+	 * @param idInmueble
+	 * @param visitorId
+	 * @throws MembresiaVencidaException
+	 * @throws SQLException
+	 * @throws Exception
+	 */
+	private void generarOrdenCompra(String idInmueble, int visitorId)
+			throws MembresiaVencidaException, SQLException, Exception {
+		
+		appendLog("metrocuadradoWS", " => Generando orden de compra para el inmueble : " + idInmueble);
+		Inmueble inmueble = new Inmueble(connection);
+		int idOrdenCompra = 0;
+		
+		try {
+			inmueble.setup(idInmueble, 1);
+			idOrdenCompra = inmueble.crearOrdenCompra();
+			appendLog("metrocuadradoWS", " => Verificando valor a pagar orden de compra Nro. : " + idOrdenCompra);
+			//Pasa dos veces por la publicación
+			verificarValorAPagar(visitorId, idInmueble, idOrdenCompra);
+			
+		} catch (MembresiaVencidaException e) {
+			throw new MembresiaVencidaException(e.toString());	
+			
+		} catch (SQLException e) {
+			throw new SQLException(e);
+			
+		} catch (Exception e) {
+			throw new Exception(e);
+			
+		}finally{
+			inmueble.close();
+		}
+	}
+
+	/**
+	 * Realiza la comprobacion del valor a pagar. Si es cero, se aprueba
+	 * automaticamente la orden de compra.
+	 * 
+	 *  1. Si no tiene que pagar entonces se aprueba la orden de compra
+	 * 
+	 * @param visitorId
+	 * @param idInmueble
+	 * @param idOrdenCompra
+	 * @throws MembresiaVencidaException
+	 * @throws SQLException
+	 * @throws Exception
+	 */
+	private void verificarValorAPagar(int visitorId, String idInmueble,	int idOrdenCompra)
+			throws MembresiaVencidaException, SQLException, Exception {
+		
+		MOrdenesDeCompra mOrdenCompra = new MOrdenesDeCompra(connection);
+
+		ResultSet rs = mOrdenCompra.get(idOrdenCompra);
+		
+		try {
+			if (rs.next() && rs.getLong("saldoAPagar") == 0) {
+				MMembresias mMembresia = new MMembresias(connection);
+
+				if (mMembresia.getMembresiasSinSaldo(idOrdenCompra) == 0) {
+					mMembresia.afectarSaldosParaOrden(idOrdenCompra);
+				}
+				mOrdenCompra.aprobar(idOrdenCompra, visitorId);
+				
+				appendLog("metrocuadradoWS", "Intentando publicar Inmueble : " + idInmueble);
+				publicarInmueble(idInmueble);
+				
+			} else {
+				appendLog("metrocuadradoWS", "El saldo a pagar es mayor que 0");
+				throw new MembresiaVencidaException("Membresia vencida");
+			}
+		} catch (Exception e) {
+			throw new Exception(e);
+			
+		}finally{
+			rs.getStatement().close();
+			rs.close();
+		}
+	}
+
+	/**
+	 * Realiza la publicaci�n de todos los inmuebles (que se puedan publicar)
+	 * que fueron importados en esta importaci�n.
+	 * 
+	 * @exception SQLException
+	 *                Cuando ocurre algun problema con el acceso a la base de
+	 *                datos.
+	 */
+	private void publicarInmueble(String idInmueble) throws Exception {
+
+		MInmuebles mi = new MInmuebles(connection);
+		mi.ponerEnPublicacion(idInmueble); // pone el inmueble
+		// enPublicacion='S'
+		mi.publicar(idInmueble, false);
+	}
+
+	/**
+	 * Genera la orden de compra para los inmuebles insertados.
+	 * 
+	 * @exception SQLException
+	 *                Cuando ocurre algun problema con el accesso a la base de
+	 *                datos.
+	 * @exception Exception
+	 *                Cuando ocurra algun error en la creacio	n de las ordenes de
+	 *                compra
+	 */
+	private void borrarOrdenesCompra(String idInmueble)
+			throws SQLException, Exception {
+
+		MOrdenesDeCompra mOrdenCompra = new MOrdenesDeCompra(connection);
+		ResultSet rs 	= mOrdenCompra.getOrdenesInmueble(idInmueble);
+		
+		try {
+			while (rs.next()) {
+				mOrdenCompra.borrarOrdenCompra(rs.getInt("idOrdenCompra"));
+			}
+		}catch (SQLException e) {
+			throw new SQLException(e);
+			
+		} catch (Exception e) {
+			throw new Exception(e);
+			
+		}finally{
+			rs.getStatement().close();
+			rs.close();
+		}
+	}
+
+	
+	/**
+	 * Verifica si el inmueble es nuevo o no
+	 * 
+	 * @param datos
+	 *            hashmap con las caracteristicas del inmueble
+	 * @return
+	 */
+	private boolean esInmuebleNuevo(HashMap datos) {
+
+		boolean esNuevo = false;
+		
+		Set entries = datos.entrySet();
+		Iterator it = entries.iterator();
+
+		String caracteristica = "";
+		while (it.hasNext()) {
+		
+			Map.Entry entry = (Map.Entry) it.next();
+			caracteristica = entry.getValue().toString();
+			if (caracteristica.equalsIgnoreCase("Sobre plano")
+					|| caracteristica.equalsIgnoreCase("En construcción")
+					|| caracteristica.equalsIgnoreCase("En construccion")) {
+
+				esNuevo = true;
+				break;
+			}
+			// }
+
+		}
+		return esNuevo;
+
+	}
+	
+
+	private boolean sePuedeDespublicar(String idInmueble) throws Exception {
+		boolean retorno = true;
+		Inmueble inmueble = null;
+
+		inmueble = new Inmueble(connection, idInmueble);
+		if (inmueble == null) {
+			
+			retorno = false;
+			inmueble.close();
+			throw new DespublicarInmuebleException("El inmueble " + idInmueble	+ " no existe");
+
+		}
+		inmueble.close();
+		return retorno;
+	}
+
+
+	/**
+	 * Esta funcion retorna los tipos de inmueble que existen en un pais, id y
+	 * nombre
+	 * 
+	 * @param pais
+	 *            id del pais a buscar
+	 * @return Hashmap con los ids y los nombres de los tipo de inmueble
+	 * @throws Exception
+	 */
+	private HashMap obtenerTipoInmueble(int pais) throws Exception {
+		HashMap datos = new HashMap();
+		connection = getConnection();
+		// Connection c = getConnection();
+		MInmuebles inmueble = new MInmuebles(connection);
+		datos = inmueble.obtenerTiposInmueblesH(pais);
+		releaseConnection(connection);
+		connection = null;
+
+		return datos;
+	}
+
+	/**
+	 * Obtiene las catarteristicas de un inmueble dependiendo del tipo de
+	 * inmueble y negocio
+	 * 
+	 * @param tipo
+	 *            generales, especificas, exteriores,seguridad, otras
+	 * @param pais
+	 *            id del pais
+	 * @param idTipoInmueble
+	 *            id del tipo de inmueble , apto, casa bodega, local finca
+	 * @param seVende
+	 *            se vende =S no se vende = N
+	 * @param seArrienda
+	 *            se arrienda =S nose arrienda=N
+	 * @return caracteristicas
+	 * @throws Exception
+	 */
+	private String obtenerCaracteristicas(int tipo, int pais,
+			int idTipoInmueble, String seVende, String seArrienda)
+			throws Exception {
+		String retorno = "";
+		connection = getConnection();
+		// Connection connection = getConnection();
+		appendLog("metrocuadradoWS", "primera vez");
+		TipoCaracteristica generales = new TipoCaracteristica(connection, tipo,
+				pais, idTipoInmueble, "S".equals(seVende), "S"
+						.equals(seArrienda));
+
+		Caracteristica[] gen = generales.obtenerCaracteristicas();
+		appendLog("metrocuadradoWS", "es obligatoria "
+				+ gen[0].getObject("esObligatoria"));
+		String valores[] = null;
+		String valor = "";
+		String nombreCampo = "";
+		String esObligatoria = "";
+
+		// Caracteristica nombreCampo= null;
+		for (int i = 0; i < gen.length; i++) {
+			nombreCampo = gen[i].getObject("idCaracteristica").toString();
+			esObligatoria = gen[i].getObject("esObligatoria").toString();
+			valores = generales.obtenerCaracteristica(
+					gen[i].getObject("idCaracteristica").toString())
+					.obtenerValores();
+			retorno += nombreCampo + ":";
+			for (int j = 0; j < valores.length; j++) {
+				valor = valores[j].toString();
+				retorno += valor;
+				if (j != valores.length - 1) {
+					retorno += ",";
+				}
+				appendLog("metrocuadradoWS", "valor" + i + "=" + valor);
+			}
+			retorno += "|" + esObligatoria;
+			retorno += ";";
+		}
+		appendLog("metrocuadradoWS", "retorno=" + retorno);
+
+		releaseConnection(connection);
+		connection = null;
+		return normalizarCadena(retorno);
+
+	}
+
+	/**
+	 * Esta funcion retorna las ciudades registradas
+	 * 
+	 * @param pais
+	 *            id del pais a buscar
+	 * @return Hashmap con los ids y los nombres de los tipo de inmueble
+	 * @throws Exception
+	 */
+	private HashMap obtenerCiudades() throws Exception {
+		HashMap datos = new HashMap();
+		connection = getConnection();
+		// Connection c = getConnection();
+		MCiudades ciudades = new MCiudades(connection);
+		datos = ciudades.ciudadesHash();
+		releaseConnection(connection);
+		connection = null;
+		return datos;
+	}
+
+	
+	/**
+	 * Metodo que retorna los inmuebles publicados
+	 * @param loginid
+	 * @return
+	 * @throws Exception
+	 */
+	
+	private ResultSet obtenerInmueblesPublicadosUsuario(String loginid) throws Exception {
+		
+		ResultSet inmuebles = null;
+		connection = getConnection();
+		MInmuebles mi = new MInmuebles(connection);
+		inmuebles = mi.recuperarInmueblesPublicadosWS(loginid);
+		releaseConnection(connection);
+		connection = null;
+		return inmuebles;
+	}
+	
+	
+	/**
+	 * 
+	 * @param loginid
+	 * @return
+	 * @throws Exception
+	 */
+	
+	private ResultSet obtenerContactosInmueble(String idinmueble, String usuario) throws Exception {
+		
+		ResultSet inmuebles = null;
+		connection = getConnection();
+		MInmuebles mi = new MInmuebles(connection);
+		inmuebles = mi.recuperarContactoInmueble(idinmueble,usuario);
+		releaseConnection(connection);
+		connection = null;
+		return inmuebles;
+	}
+	
+	
+	/**
+	 * Meotod que retorna los inmuebles despublicados
+	 * @param loginid
+	 * @return
+	 * @throws Exception
+	 */
+	private ResultSet obtenerInmueblesDespublicadosUsuario(String loginid) throws Exception {
+		
+		ResultSet inmuebles = null;
+		connection = getConnection();
+		MInmuebles mi = new MInmuebles(connection);
+		inmuebles = mi.recuperarInmueblesDespublicadosWS(loginid);
+		releaseConnection(connection);
+		connection = null;
+		return inmuebles;		
+		
+	}
+	
+	
+	/**
+	 * Metodo que retorna los inmuebles con fotos insertadas por WS
+	 * @param loginid
+	 * @return
+	 * @throws Exception
+	 */
+	private ResultSet obtenerInmueblesConImagenesInsertadas(String loginid) throws Exception{
+		
+		ResultSet inmuebles = null;
+		connection = getConnection();
+		MInmuebles mi = new MInmuebles(connection);
+		inmuebles = mi.recuperarInmueblesConFotosInsertadasWS(loginid);
+		releaseConnection(connection);
+		connection = null;
+		
+		return inmuebles;
+		
+	}
+	
+
+	/**
+	 * 
+	 * Verifica si la longitud del inmueble no supera el maximo permitido
+	 
+	 * @param idInmueble
+	 * @return
+	 */
+	private boolean isLongitudValida(String idInmueble){
+		
+		return (idInmueble.length() <= 15);
+	}
+	
+	
+	/**
+	 * Reemplaza las tildes en una cadena
+	 * 
+	 * @param cadena
+	 * 
+	 *            cadena a reemplazar
+	 * @return
+	 */
+	private String normalizarCadena(String cadena) {
+
+		return PJRString.replaceIgnoreCase(PJRString.replaceIgnoreCase(
+				PJRString.
+
+				replaceIgnoreCase(PJRString.replaceIgnoreCase(PJRString.
+
+				replaceIgnoreCase(PJRString
+						.replaceIgnoreCase(cadena, "ñ", "ni"), "ú",
+
+				"u"), "ó", "o"), "í", "i"), "é", "e"), "á", "a");
+
+	}
+	
+	/**
+	 * Valida si el id de la ciudad pasado como parametro es una ciudad
+	 * principal de acuerdo al enum de ciudades principales
+	 * @param id
+	 * @return
+	 */
+	private boolean esCiudadPrincipal(int id){
+		
+		boolean esPrincipal = false;
+		
+		for(CiudadesPrincipales ciudad : CiudadesPrincipales.values()){
+			if(ciudad.getId() == id){
+				esPrincipal = true;
+				break;
+			}
+		}
+		
+		return esPrincipal;
+	}
+	/**
+	 * Normaliza tiempo construido para no tener problemas con la base de datos.
+	 * @param AnosConstruido
+	 * @return
+	 * @author josroj
+	 */
+	
+		private String obtenerTiempoConstruido(String AnosConstruido) {
+			String tiempoConstruido=""; // Si AnosConstruido esta vacio coloca por defecto (Más de 20 años)
+			appendLog("metrocuadradoWS","A\u00f1os construido "+ AnosConstruido);
+			if(AnosConstruido.equalsIgnoreCase("SOBREPLANO")){
+				tiempoConstruido="Sobre Plano";
+			}
+			if(AnosConstruido.equalsIgnoreCase("ENCONSTRUCCION")){
+				tiempoConstruido="En Construcción";
+			}
+			if(AnosConstruido.equalsIgnoreCase("PARAESTRENAR")){
+				tiempoConstruido="Para Estrenar";
+			}
+			if(AnosConstruido.equalsIgnoreCase("REMODELADO")){
+				tiempoConstruido="Remodelado";
+			}
+			if(AnosConstruido.equalsIgnoreCase("ENTRE0Y5ANOS")){
+				tiempoConstruido="Entre 0 y 5 a\u00f1os";
+			}
+			if(AnosConstruido.equalsIgnoreCase("ENTRE5Y10ANOS")){
+				tiempoConstruido="Entre 5 y 10 a\u00f1os";
+			}
+			if(AnosConstruido.equalsIgnoreCase("ENTRE10Y20ANOS")){
+				tiempoConstruido="Entre 10 y 20 a\u00f1os";
+			}
+			if(AnosConstruido.equalsIgnoreCase("MASDE20ANOS")){
+				tiempoConstruido="M\u00e1s de 20 a\u00f1os";
+			}
+				return tiempoConstruido;
+		}
+		
+	/**
+	 * 
+	 * Verifica si la longitud del comentarioPublicacion no supera el maximo permitido por DB
+	 * @param idInmueble
+	 * @author josroj
+	 * @return
+	 */
+	private boolean isLongitudValidaComentario(String comentario){
+		
+		return (comentario.length() <= 500);
+	}
+	/**
+	 * Va a comprobar si el inmueble se encuentra eliminado. 
+	 * @param idInmueble
+	 * @return
+	 * @throws SQLException
+	 * @author josroj
+	 */
+	
+	private boolean inmuebleEliminado(String idInmueble) throws SQLException {
+		
+		MInmuebles MInmuebles = new MInmuebles(connection);
+		appendLog("metrocuadradoWS","consulta si el inmueble esta vigente");
+		boolean respuesta = false;
+		try {
+			respuesta = MInmuebles.comprobarInmuebleEliminado(idInmueble);
+		} catch (SQLException e) {
+			appendLog("metrocuadradoWS","Error al consultar el inmueble "+e.getMessage());
+		}
+		return respuesta;
+	}
+	
+	/**
+	 * Verifica si el usuario tiene una membresia activa.
+	 * @param visitorId
+	 * @return
+	 * @throws SQLException
+	 */
+	
+	private boolean membresiaActiva(int visitorId) throws SQLException{
+		
+		appendLog("metrocuadradoWS","Consulta membresia vigente");
+		MMembresias MMembresias = new MMembresias(connection);
+		boolean membresia = false; 
+		try {
+			membresia = MMembresias.estaVigente(visitorId);	
+			
+		} catch (SQLException e) {
+			appendLog("metrocuadradoWS","Error al consultar si el usuario tiene membresia vigente "+e.getMessage());
+		}
+		
+		return membresia;
+	}
+	
+	/**
+	 * Se utiliza para generara el IdTipoNegocio del inmueble que se esta procesando 
+	 * @param seVende
+	 * @param seArrienda
+	 * @return
+	 * @author josroj
+	 */
+	
+	private int traerIdTipoNegocio(String seVende, String seArrienda) {
+		int idTipoNegocio = 0;
+		appendLog("metrocuadradoWS","Inmueble seVende= "+seVende+" seArrienda="+seArrienda);
+		
+		if(seVende.equals("S")){
+			idTipoNegocio = 1;
+			appendLog("metrocuadradoWS","seVende == S "+idTipoNegocio);
+		}
+		if(seArrienda.equals("S")){
+			idTipoNegocio = 2;
+			appendLog("metrocuadradoWS","seArrienda == S "+idTipoNegocio);
+		}
+		if(seArrienda.equals("S") && seVende.equals("S")){
+			idTipoNegocio = 3;
+			appendLog("metrocuadradoWS","seArrienda == S && seVende == S "+idTipoNegocio);
+		}
+		appendLog("metrocuadradoWS","Inmueble idTipoNegocio= "+idTipoNegocio);
+		
+		return idTipoNegocio;
+	}
+	
+	/**
+	 * Metodo que se utliza para recuperar el valor del inmueble con el formato ideal 
+	 * @param valorVenta
+	 * @return
+	 * @author josroj
+	 */
+	
+	private static String getValor(String valor) {
+		valor=PJRString.replace(valor, ".00","");
+		valor=PJRString.replace(valor, "$","");
+		valor=PJRString.replace(valor, ",","");
+		return valor;
+	}
+	
+	/**
+	 * Este metodo valida se hay problemas con la cadena de datos enviada al metodo de publicacion.
+	 * @param usuario
+	 * @param clave
+	 * @param accionPublicacion
+	 * @param idInmueble
+	 * @param idTipoInmueble
+	 * @param seVende
+	 * @param seArrienda
+	 * @param idCiudad
+	 * @param caracteristicas
+	 * @author josroj
+	 * @return
+	 */
+		
+	private String validarErrorGeneral(String usuario, String clave,
+				String accionPublicacion, String idInmueble, int idTipoInmueble,
+				String seVende, String seArrienda, int idCiudad,
+				String caracteristicas) {
+			
+			StringBuffer errorGeneral = new StringBuffer();
+			String mensaje = null;
+			
+			if(usuario == null){
+				appendLog("metrocuadradoWS", "No tiene usuario");
+				errorGeneral.append("'usuario' | ");
+			}
+			if(clave == null){
+				appendLog("metrocuadradoWS", "No tiene clave");
+				errorGeneral.append("'clave' | ");
+			}
+			if(accionPublicacion == null){
+				appendLog("metrocuadradoWS", "No tiene accionPublicacion");
+				errorGeneral.append("'accionPublicacion' ('Publicar','Actualizar','Despublicar'	) | ");
+			}
+			if(idInmueble == null){
+				appendLog("metrocuadradoWS", "No tiene idInmueble");
+				errorGeneral.append("'idInmueble' | ");
+			}
+			if(idTipoInmueble <= 0 || idTipoInmueble >= 14){
+				appendLog("metrocuadradoWS", "No tiene idTipoInmueble");
+				errorGeneral.append("'idTipoInmueble' puede ver el metodo obtenerTipoInmueble | ");
+			}
+			if(seVende == null){
+				appendLog("metrocuadradoWS", "No tiene seVende");
+				errorGeneral.append("'seVende' | ");
+			}
+			if(seArrienda == null){
+				appendLog("metrocuadradoWS", "No tiene seArrienda");
+				errorGeneral.append("'seArrienda' | ");
+			}
+			if(idCiudad <= 0){
+				appendLog("metrocuadradoWS", "No tiene idCiudad");
+				errorGeneral.append("'idCiudad' puede ver el metodo obtenerCiudades | ");
+			}
+			if(caracteristicas == null){
+				appendLog("metrocuadradoWS", "No tiene caracteristicas");
+				errorGeneral.append("'caracteristicas'.");
+			}
+			if(!errorGeneral.toString().isEmpty()){
+				mensaje =  "mensaje,error en el parametro "+errorGeneral+" Verifique que se este enviendo correctamente.";
+			}
+			
+			return mensaje;
+		}	
+
+	/**
+	 * Valida que la cadena sea un entero para poder ser procesada, de lo contrario retorna cero. 
+	 * @param valor
+	 * @return
+	 */
+	
+	private int parseIntValor(String valor){
+		int entero = 0;
+		try{
+			entero = Integer.parseInt(valor);
+		}
+		catch (NumberFormatException nfe){
+			entero= 0;
+		}
+		return entero;
+	}
+	
+	
+	/**
+	 * Esta funcion retorna las regiones de colombia
+	 * @param connection
+	 * @return
+	 * @throws Exception
+	 */
+	private String obtenerRegiones() throws Exception {
+		MRegiones MRegiones = new MRegiones(connection);
+		String datos = MRegiones.regionesWs();
+		return datos;
+	}
+
+	
+	/**
+	 * Esta funcion retorna las ciudades registradas 
+	 * @param connection
+	 * @return
+	 * @throws Exception
+	 */
+	private String obtenerCiudades(int idRegion) throws Exception {
+		MCiudades MCiudades = new MCiudades(connection);
+		String datos = MCiudades.ciudades(idRegion);
+		return datos;
+	}
+	
+	/**
+	 * Valida si la membresia permite agentes inmobiliarios
+	 * @param visitorId
+	 * @return
+	 */
+	private boolean membresiaConPermisosAgenteInm(int visitorId) {
+		
+		boolean conPermisos= false;
+		
+		try {
+			appendLog("agenteInmobiliario","membresiaConPermisosAgenteInm");
+			MInmuebles mInmiebles = new MInmuebles(connection);
+			conPermisos = mInmiebles.membresiaAceptaAgenteInm(visitorId);
+			appendLog("agenteInmobiliario","Retorno "+conPermisos);
+			
+		} catch (Exception e) {
+			appendLog("agenteInmobiliario","Error al tratar de verificar si la membresia con  permisos \n"+e.getMessage()+"\n"+e.getCause()+"\n"+e.toString());
+		}
+		return conPermisos;
+	}
+
+	/**
+	 * 
+	 * @param idInmueble
+	 * @param nombre
+	 * @param telefono
+	 * @throws SQLException
+	 */
+	
+	private String asociarAgenteInmobiliario(String idInmueble, String nombre,String telefono) throws SQLException {
+		
+		String respuesta="";
+		
+		MInmuebles mInmuebles = new MInmuebles(connection);
+		String telefonoFormateado = "";
+		
+		int i=0;
+		for (short indice = 0; indice < telefono.length(); indice++){	
+		   	 char caracter = telefono.charAt(indice);		   	 
+		   	 if(isNumeric(caracter)){
+		   		 i++;
+		   		 if(i<=10){
+		   			telefonoFormateado += caracter;  
+		   		 }
+		   	 }
+		}
+		long telefonoAgente = Long.parseLong(telefonoFormateado); 
+		
+	    if(!mInmuebles.tieneAgenteinmobiliario(idInmueble)){
+	    	mInmuebles.asignarAgenteinmobiliario(idInmueble, nombre, telefonoAgente);
+	    	respuesta="Se asocio el agente al inmueble";
+	    }
+	    else{
+	    	mInmuebles.actualizarAgenteinmobiliario(nombre, telefonoAgente, idInmueble);
+	    	respuesta="Se actualizo el agente del inmueble";
+	    }
+	    return respuesta;
+	}
+	
+	/**
+	 * Metodo que valida la URL enviada
+	 * @param idInmueble
+	 * @param url
+	 * @param videoExiste 
+	 * @return
+	 * @throws SQLException
+	 * @throws IOException 
+	 */
+	private String procesarUrlVideo(String idInmueble, String url, boolean videoExiste ) throws SQLException, IOException{
+		
+		String mensaje = "";
+		MInmuebles mInmuebles = new MInmuebles(connection);
+				
+		if(videoExiste){
+			if(url == null || url.equals("")){
+				boolean eliminado =mInmuebles.eliminarVideoInmuebleWs(idInmueble);
+				if(eliminado){
+					mInmuebles.aprobarVideoInmuebleWs("N","N",idInmueble);
+					mensaje = "Se elimino el video asociado.";
+				}
+				else{
+					mensaje = "No se pudo eliminar el video.";
+				}
+			}
+			else{
+				String urlValida =validarUrl(url);
+				if(urlValida.equals("HTTP_OK")){
+					mInmuebles.actualizarVideoInmuebleWs(idInmueble, url);
+					mInmuebles.aprobarVideoInmuebleWs("S","S",idInmueble);
+					mensaje="Video actualizado.";
+				}
+				else{
+					mensaje ="el video no fue insertado. Por vafor valide la informacion enviada.";
+				}
+			}
+		}		
+		else{
+			String urlValida =validarUrl(url);
+			if(urlValida.equals("HTTP_OK")){
+				boolean insertado = mInmuebles.insertarVideoInmuebleWS(idInmueble,url);
+				if(insertado){
+					mInmuebles.aprobarVideoInmuebleWs("S","S",idInmueble);
+					mensaje="Video insertado."; 
+				}
+				else{
+					mensaje ="el video no fue insertado. Por vafor valide la informacion enviada.";
+				}
+			}
+			else{
+				mensaje ="el video no fue insertado. Por vafor valide la URL enviada";
+			}
+		}
+		return mensaje;
+	}
+	
+	/**
+	 * 
+	 * @param idInmueble
+	 * @return
+	 */
+	
+	private boolean existeVideo(String idInmueble) throws SQLException {
+		
+		MInmuebles mInmuebles = new MInmuebles(connection);
+		return mInmuebles.existeVideoInmuebleWs(idInmueble);
+	
+	}
+	
+	
+	/**
+	 * 
+	 * @param url
+	 * @return
+	 * @throws IOException
+	 */
+	private String validarUrl(String url) throws IOException {
+		String urlValida = "";
+		
+		if (url.toLowerCase().contains("youtube.com") || url.toLowerCase().contains("youtu.be")) {
+			try {
+				
+				URL u = new URL(url);
+				HttpURLConnection huc =  (HttpURLConnection)  u.openConnection(); 	      
+				huc.setRequestMethod("GET"); 
+				huc.connect(); 
+				boolean httpOk=(huc.getResponseCode() == HttpURLConnection.HTTP_OK);
+				if(httpOk){
+					urlValida = "HTTP_OK";
+				}
+				else{
+					urlValida= "La url no esta dispoble. Por favor verifiquela y vuelva a intentarlo.";
+				}
+			} 
+			catch (Exception e) {
+				urlValida = "Problema al validar la url ingresada.";
+			}
+		}
+		else{
+			urlValida = "La url ingresada no cumple con la estructura. Solo se permiten videos de YouTube.com";
+		}
+		return urlValida;
+	      
+	}
+
+	/**
+	 * Metodo Que se utiliza para publicar y actualizar un inmueble
+	 * Modificado JOSROJ
+	 * @param usuario
+	 * @param clave
+	 * @param idTipoInmueble
+	 * @param seVende
+	 * @param seArrienda
+	 * @param idCiudad
+	 * @param caracteristicas
+	 * @return
+	 * @throws Exception
+	 * @since 14/08/2013
+	 */
+	public String procesarInmueble(String usuario, String clave, String accionPublicacion, 
+								   String idInmueble, int idTipoInmueble, String seVende, 
+								   String seArrienda, int idCiudad, String caracteristicas)  {
+
+		String mensajeRetorno = ""; // Mensaje devuelto cuando se consume el metodo
+		try {
+			appendLog("metrocuadradoWS", " Realizando peticion al metodo procesarInmueble con accion => " + accionPublicacion);
+
+			String mensajeEGeneral = validarErrorGeneral(usuario,clave,accionPublicacion,idInmueble,idTipoInmueble,seVende,seArrienda,idCiudad,caracteristicas);
+			
+			appendLog("metrocuadradoWS", "Respuesta mensajeGeneral " + mensajeEGeneral);
+			
+			if(mensajeEGeneral != null){
+				return mensajeEGeneral;
+			}
+			
+			if (!puedeEnviar()) {
+				return "No puede Enviar informacion inmueble, por favor espere...";
+			}
+			
+			connection = getConnection();
+
+			MWebServiceLog mwsl 	= new MWebServiceLog(connection);
+
+			int visitorId 	= 0;
+			MUsuarios mu 	= new MUsuarios(connection);				
+			User usuarioM2	= mu.obtenerUsuario(usuario.toLowerCase());
+			String claveM2 	= usuarioM2.getPassword();
+			appendLog("metrocuadradoWS", " Usuario 	=> " + usuario.toLowerCase());
+			
+			if (usuarioM2 != null && claveM2.equals(clave)) {
+				
+				visitorId = usuarioM2.getUserID();
+				String validarPeticiones = mwsl.sumarPeticionesUsuario(visitorId);
+				
+				if(!validarPeticiones.equals("fullPeticiones")){
+					if(validarPeticiones.equals("noEsUsuarioWs")){
+						appendLog("peticionesUsuarioWS", " Usuario sin permisos => " + usuario.toLowerCase());
+						appendLog("metrocuadradoWS", "Cliente con " + validarPeticiones+ " peticiones");
+						return mensajeRetorno = MensajeRespuesta.USUARIO_NO_AUTORIZADO_PARA_WS.toString();
+					}
+					else{
+						appendLog("metrocuadradoWS", "Cliente con " + validarPeticiones+ " peticiones");
+					}
+				}
+				else{
+					return mensajeRetorno = MensajeRespuesta.USUARIO_EXCEDIO_PETICIONES_DIARIAS.toString();
+				}
+				
+				if( !membresiaActiva(visitorId) ){
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				
+				String numMaximoIntentosDiariosWS = getProperty("numMaximoIntentosDiariosWS");
+				int numMax 						  = Integer.parseInt(numMaximoIntentosDiariosWS);
+				
+				if(!mwsl.ciudadExiste(idCiudad)){
+					idCiudad=mwsl.getIdCiudad(idCiudad);
+				}
+
+				
+				if (mwsl.getRegistrosInmuebleDiaWS(idInmueble) >= numMax){ //numeromaximo de intentos diarios WS
+					releaseConnection(connection);
+					connection = null;
+					liberarPeticion();
+					return MensajeRespuesta.MAXIMO_NUMERO_INTENTOS.toString();
+				}
+				
+				appendLog("metrocuadradoWS", " Inmueble => " + idInmueble);
+				mwsl.insertarRegistroInmueble(idInmueble, visitorId, accionPublicacion, idTipoInmueble, 
+						  seVende, seArrienda, idCiudad, caracteristicas, 
+						  "Peticion al WS antes de procesar Inmueble", "No aplica");
+				
+				caracteristicas = caracteristicas.replaceAll("#","No.");
+				
+				String mensaje	= "";
+				mensaje 		= procesarInmueble(visitorId, accionPublicacion, idInmueble, 
+													idTipoInmueble, seVende, seArrienda, 
+													idCiudad, caracteristicas);
+				mensajeRetorno	= "inmueble," + idInmueble + ";" + mensaje;
+				
+				// Registro en loginmueblesws despues de procesar el inmueble
+				mwsl.insertarRegistroInmueble(idInmueble, visitorId, accionPublicacion, idTipoInmueble, 
+											  seVende, seArrienda, idCiudad, caracteristicas, 
+											  mensajeRetorno, "No aplica");
+				connection.commit();	
+			} else {
+				mensajeRetorno 	= MensajeRespuesta.CLAVE_INVALIDA.toString();
+				visitorId 		= usuarioM2.getUserID();
+				
+				appendLog("metrocuadradoWS", mensajeRetorno);					
+				mwsl.insertarRegistroInmueble(idInmueble, visitorId, accionPublicacion, idTipoInmueble, 
+											  seVende, seArrienda, idCiudad, caracteristicas, mensajeRetorno,
+											  "NO SE PUDO PUBLICAR");
+				connection.commit();
+			}
+			
+			// Se cierran conexiones
+			
+			
+		} catch (InmuebleNoExisteException e) {
+			
+			mensajeRetorno = e.getMessage();//MensajeRespuesta.INMUEBLE_NO_EXISTE.toString() + " : " + idInmueble;
+			
+		} catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (DireccionNoExisteEnGisException e) {				
+			mensajeRetorno = "COD 10 : Dirección no existe en el GIS. Por favor verifique la ciudad y la dirección enviada";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (DespublicarInmuebleException e) {
+			mensajeRetorno = MensajeRespuesta.INMUEBLE_NO_DESPUBLICADO.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (DireccionExistenteException e) {
+			mensajeRetorno = MensajeRespuesta.DIRECCION_YA_EXISTE_PUBLICACION.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (InmuebleNoPerteneceException e) {
+			mensajeRetorno = MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} finally {
+			try {
+				// TODO: Va a cerrar coneccion procesarInmueble
+				appendLog("metrocuadradoWS", "va a soltar la conexion procesar inmueble");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		
+		if(mensajeRetorno.isEmpty()){
+			appendLog("metrocuadradoWS", "ERROR : Excepcion generada procesando los datos del inmueble : " + idInmueble);
+			mensajeRetorno = "mensaje,ocurrio un error procesando la peticion por favor intente de nuevo o "+
+							 "comuniquese con Metrocuadrado para hacer seguimiento a su publicacion";
+		}
+		
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * Metodo que se utliliza para subir fotos en Azure
+	 * Metodo modificado JOSROJ
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @param URL
+	 * @return
+	 * @since 14/08/2013
+	 */
+	
+	public String insertarRutaFotos(String usuario, String clave, String idInmueble, String URL){
+		
+		String mensajeRetorno = "";
+		HashSet<Integer> hs=new HashSet<Integer>();
+		try {
+			appendLog("metrocuadradoWS", "Usuario para procesar"+usuario);
+			appendLog("metrocuadradoWS", "Inmueble para insertarRutaFotos "+idInmueble);
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			mensajeRetorno = "inmueble,"+idInmueble+";mensaje,";
+			int fotosInsertadas = 0;
+			MWebServiceLog mwsl 	= new MWebServiceLog(connection);
+
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				/**Valida los permisos a WebServices*/
+				String validarPeticiones = mwsl.sumarPeticionesUsuario(visitorId);
+				
+				if(validarPeticiones.equals("noEsUsuarioWs")){
+					return mensajeRetorno = MensajeRespuesta.USUARIO_NO_AUTORIZADO_PARA_WS.toString();
+				}
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				verificarPermisoInmueble(idInmueble, visitorId);
+				
+
+				//Logica
+				MFotos mfotos = new MFotos(connection);
+				
+				//Valida si al inmueble le enviaron fotos recientemente
+				appendLog("metrocuadradoWS", "Va a validar si el inmueble tiene fotos de menos de 24 Horas : "+idInmueble);
+				if(!mfotos.validarFotosEnviadasRecienteWs(idInmueble)){
+					if (!puedeEnviar()) {
+							return "No puede Enviar informacion inmueble, por favor espere...";
+					}
+					MInmuebles mi = new MInmuebles(connection);
+					Fotos fotos=new Fotos();
+					
+					String[] direcciones = PJRString.split(URL, ";");
+					appendLog("metrocuadradoWS", "antes de maxfotoss");
+					int max_fotos = Integer.parseInt(getProperty("numMaximoFotosWS"));
+					appendLog("metrocuadradoWS", "max_fotos = " + max_fotos);
+					for (int j = 0; j < direcciones.length && j < max_fotos; j++) {
+
+						mfotos.insertarLogFotoPendienteInmueble(idInmueble, j + 1,direcciones[j]);	
+						/*Agregar cada foto para luego enviarla a gs Azure:*/
+						Foto foto=new Foto(idInmueble,direcciones[j],new Integer(j+1).toString() );
+						if (ValidateURL.valid(foto.getUrlFoto())){
+							long start = System.currentTimeMillis();							
+							fotos.add(foto);
+							hs.add(new Integer(j+1));
+							fotosInsertadas++;
+							long end = System.currentTimeMillis();
+							appendLog("metrocuadradoWS", "Tiempo cargando foto "+(end-start)+" MS" );
+						}
+					}
+	
+					/*Colocar el xml del envio: Azure*/
+					getCarga().setXmlDatos(fotos.toXML());
+					
+					/*Enviar datos a Azure:*/
+					uploadData();
+					/*Regristrar la carga en el log:para Azure*/
+					//retorno+=getCarga().toString();
+					appendLog("metrocuadradoWS", getCarga().toString());
+					int[] fotosArr=Util.toPrimitive(hs.toArray());
+					mi.updateAprobacionesFotos(idInmueble,fotosArr,fotosInsertadas);
+	
+					mensajeRetorno+= fotosInsertadas + " links fotos insertadas";
+					connection.commit();
+				}
+				else{
+					appendLog("metrocuadradoWS", "El inmuebles "+idInmueble+" Tiene fotos de menos de 24 Horas");
+					return MensajeRespuesta.INMUEBLE_CON_FOTOS_RECIENTES.toString();
+				}
+			}
+		else {
+			appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+			return MensajeRespuesta.CLAVE_INVALIDA.toString();
+		}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (InmuebleNoExisteException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_EXISTE.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (InmuebleNoPerteneceException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+			appendLog("metrocuadradoWS", "ERROR : El inmueble "+idInmueble+" no fue ingresado por usted");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va a cerrar coneccion insertarRutaFotos
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	
+	/**
+	 * Esta funcion es la que se publica en el WS y retorna los tipos de inmuebles
+	 * @param usuario
+	 * @param clave
+	 * @param pais
+	 * @return
+	 * @author josroj
+	 * @since 14/08/2013
+	 */
+	public String obtenerTipoInmueble(String usuario, String clave, int pais){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar los inmuebles despublicados");
+			connection = getConnection();
+			HashMap datos = new HashMap();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+			//Logica
+			datos = obtenerTipoInmueble(pais);
+			mensajeRetorno = "success,true;";
+			for (int i = 0; i < datos.size() / 2; i++) {
+				mensajeRetorno += datos.get("tipoNombre" + i).toString() + ","
+						+ datos.get("tipoId" + i).toString() + ";";
+			}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {				
+				// TODO: Va cerrar coneccion obtenerTipoInmueble
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * Metodo que retorna las Caracteristicas por el tipo de inmueble
+	 * @param usuario
+	 * @param clave
+	 * @return
+	 * @author josroj
+	 * @since 14/08/2013
+	 */
+	public String obtenerCaracteristicas(String usuario, String clave, int tipo, int pais, int idTipoInmueble, String seVende, String seArrienda){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar los inmuebles despublicados");
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				int idTipoNegocio = traerIdTipoNegocio(seVende, seArrienda);
+				
+				if(idTipoNegocio == 0){
+					appendLog("metrocuadradoWS","No se recibe tipo de negocio");
+					return MensajeRespuesta.INMUEBLE_SIN_TIPONEGOCIO.toString();
+				}
+				else{
+					String datos = obtenerCaracteristicas(tipo, pais, idTipoInmueble, seVende, seArrienda);
+					mensajeRetorno = "success,true;" + datos;
+					mensajeRetorno= normalizarCadena(mensajeRetorno);
+				}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerCaracteristicas
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * Metod que retorna las ciudades activas en metrocuadrado
+	 * @param usuario
+	 * @param clave
+	 * @return
+	 * @author josroj
+	 * @since 14/08/2013
+	 */
+	public String obtenerCiudades(String usuario, String clave, String region){
+
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar las ciudades activas en metrocuadrado");
+			connection = getConnection();
+			HashMap datos = new HashMap();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+			//Logica
+				String ciudades = "";
+				appendLog("metrocuadradoWS","Este es el valor de idRegion:::"+region+":::");
+				
+				int idRegion = (region == null || region.equals(""))?0:parseIntValor(region);
+				ciudades = obtenerCiudades(idRegion);
+				mensajeRetorno = "success,true;";
+				
+				if(ciudades != ""){
+					mensajeRetorno= normalizarCadena(mensajeRetorno+ciudades);
+				}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerCiudades
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}	
+	
+	/**
+	 * Metodo que retorna los inmuebles publicados
+	 * @param usuario
+	 * @param clave
+	 * @return
+	 * @author josroj
+	 * @since 14/08/2013
+	 */
+	public String obtenerInmueblesPublicados(String usuario, String clave){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar los inmuebles publicados");
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			ResultSet rs = null;
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				mensajeRetorno = "success,true,Publicados;";
+				try {
+					rs = obtenerInmueblesPublicadosUsuario(usuario);
+					while(rs.next()){
+						mensajeRetorno += rs.getString("idinmueble") + ";";
+					}
+					mensajeRetorno= normalizarCadena(mensajeRetorno);
+				} catch (Exception e) {
+					appendLog("metrocuadradoWS","Error al tratar de listar los inmuebles");
+				}finally{
+					rs.close();
+					rs = null;
+				}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerInmueblesPublicados
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	
+	
+	
+	
+	
+	/**
+	 * Retorna contactos de un inmueble
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @return
+	 * @author 
+	 * @since 
+	 */
+	public String obtenerContactos(String usuario, String clave, String idinmueble){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuperar Contactos de un cliente segun el id del inmueble");
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			ResultSet rs = null;
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				
+				mensajeRetorno = "success,true,Contactos;";
+				try {
+					rs = obtenerContactosInmueble(idinmueble,usuario);
+					while(rs.next()){
+						mensajeRetorno += rs.getString("descripcion") + "," 
+									   +  rs.getString("fecharegistro") + ","
+									   +  rs.getString("nombre") + ","
+									   +  rs.getString("telefono") + ","
+									   +  rs.getString("email") + ","
+									   +  rs.getString("ciudad") + ","
+									   +  rs.getString("comentario") + ";"									   
+									   ;
+					}
+					mensajeRetorno= normalizarCadena(mensajeRetorno);
+				} catch (Exception e) {
+					appendLog("metrocuadradoWS","Error al tratar de listar los contactos de un inmueble");
+				}finally{
+					rs.close();
+					rs = null;
+				}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerInmueblesPublicados
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	
+	
+	
+	
+	
+	/**
+	 * Metodo que retorna los inmuebles despublicados
+	 * @param usuario
+	 * @param clave
+	 * @return
+	 * @author josroj
+	 */
+	public String obtenerInmueblesDespublicados(String usuario, String clave){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar los inmuebles despublicados");
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			ResultSet rs = null;
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				mensajeRetorno = "success,true,Despublicados;";
+				try {
+					rs = obtenerInmueblesDespublicadosUsuario(usuario);
+					while(rs.next()){
+						mensajeRetorno += rs.getString("idinmueble") + ";";
+					}
+					mensajeRetorno= normalizarCadena(mensajeRetorno);
+				} catch (Exception e) {
+					appendLog("metrocuadradoWS","Error al tratar de listar los inmuebles");
+				}finally{
+					rs.close();
+					rs = null;
+				}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerInmueblesDespublicados
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	
+	/**
+	 * Metodo que se utiliza para despublicar un inmueble
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @return
+	 * @author josroj
+	 * @since 14/08/2013
+	 */
+	
+	public String despublicarInmuebleWS(String usuario, String clave, String idInmueble){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a despublicar el inmueble"+idInmueble);
+			connection = getConnection();
+			String retorno = "";
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			mensajeRetorno = "inmueble,"+idInmueble+";";
+			
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				verificarPermisoInmueble(idInmueble, visitorId);
+				
+				Inmueble inmueble = new Inmueble(connection, idInmueble);
+				String estapublicado = inmueble.getString("estaPublicado");
+				appendLog("metrocuadradoWS","Inmueble esta publicado "+estapublicado);
+				if(estapublicado.equals("S")){
+					MInmuebles MInmuebles = new MInmuebles(connection);
+					MWebServiceLog mwsl = new MWebServiceLog(connection);
+					appendLog("metrocuadradoWS", "DEspublicar el inmueble"+idInmueble);
+					MInmuebles.despublicar(idInmueble, "Despublicacion WS: " + usuario, visitorId);
+					appendLog("metrocuadradoWS", "inmueble despublicado");
+					mwsl.insertarRegistroInmueble(idInmueble, visitorId, "Despublicar", Integer.parseInt(inmueble.getString("idTipoInmueble")), inmueble.getString("seVende"), inmueble.getString("seArrienda"), Integer.parseInt(inmueble.getString("idCiudad")), "INMUEBLE DESPUBLICADO", retorno, "Despublicado");
+					mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_DESPUBLICADO.toString();
+					appendLog("metrocuadradoWS", mensajeRetorno+MensajeRespuesta.INMUEBLE_DESPUBLICADO.toString());
+
+				}
+				else{
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.INMUEBLE_NO_ESTA_PUBLICADO.toString());
+					return mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_ESTA_PUBLICADO.toString();
+				}
+				
+			}
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (InmuebleNoExisteException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_EXISTE.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (InmuebleNoPerteneceException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+			appendLog("metrocuadradoWS", "ERROR : El inmueble "+idInmueble+" no fue ingresado por usted");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion despublicarInmuebleWS Metodo para comentar por cambio de nombre
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * Metodo que se utiliza para despublicar un inmueble
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @return
+	 * @author josroj
+	 * @since 14/08/2013
+	 */
+	
+	public String despublicarInmueble(String usuario, String clave, String idInmueble){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a despublicar el inmueble"+idInmueble);
+			connection = getConnection();
+			String retorno = "";
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			mensajeRetorno = "inmueble,"+idInmueble+";";
+			
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				verificarPermisoInmueble(idInmueble, visitorId);
+				
+				Inmueble inmueble = new Inmueble(connection, idInmueble);
+				String estapublicado = inmueble.getString("estaPublicado");
+				appendLog("metrocuadradoWS","Inmueble esta publicado "+estapublicado);
+				if(estapublicado.equals("S")){
+					MInmuebles MInmuebles = new MInmuebles(connection);
+					MWebServiceLog mwsl = new MWebServiceLog(connection);
+					appendLog("metrocuadradoWS", "DEspublicar el inmueble"+idInmueble);
+					MInmuebles.despublicar(idInmueble, "Despublicacion WS: " + usuario, visitorId);
+					appendLog("metrocuadradoWS", "inmueble despublicado");
+					mwsl.insertarRegistroInmueble(idInmueble, visitorId, "Despublicar", Integer.parseInt(inmueble.getString("idTipoInmueble")), inmueble.getString("seVende"), inmueble.getString("seArrienda"), Integer.parseInt(inmueble.getString("idCiudad")), "INMUEBLE DESPUBLICADO", retorno, "Despublicado");
+					mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_DESPUBLICADO.toString();
+					appendLog("metrocuadradoWS", mensajeRetorno+MensajeRespuesta.INMUEBLE_DESPUBLICADO.toString());
+
+				}
+				else{
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.INMUEBLE_NO_ESTA_PUBLICADO.toString());
+					return mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_ESTA_PUBLICADO.toString();
+				}
+				
+			}
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (InmuebleNoExisteException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_EXISTE.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (InmuebleNoPerteneceException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+			appendLog("metrocuadradoWS", "ERROR : El inmueble "+idInmueble+" no fue ingresado por usted");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion despublicarInmueble
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * MOdificado JOSROJ
+	 * Metodo que retorna los inmuebles publicados
+	 * @param usuario
+	 * @param clave
+	 * @return
+	 * @since 14/08/2013
+	 */
+	public String obtenerInmueblesConFotosInsertadas(String usuario, String clave){
+		
+		String mensajeRetorno = "";
+		String retorno= "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar el los inmeubles con fotos insertadas");
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			ResultSet rs = null;
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				retorno = "success,true,InmueblesConFotosInsertadas;";
+				rs = obtenerInmueblesConImagenesInsertadas(usuario);
+				while(rs.next()){
+					retorno += rs.getString("idinmueble") + ";";
+				}
+				mensajeRetorno= normalizarCadena(retorno);
+			} 
+			else {
+				System.out.println("Webservice - ObtenerInmueblesConFotos: clave invalida del usuario");
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());				
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}
+		catch (UserNotFoundException e) {				
+			System.out.println("Webservice - ObtenerInmueblesConFotos: usuario no esta registrado");
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		}
+		catch (SQLException e) {
+			System.out.println("Webservice - ObtenerInmueblesConFotos: error 9998");
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + " con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + "con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerInmueblesConFotosInsertadas
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * Metodo publico para verificar la direccion de ciudades principales
+	 * @param usuario
+	 * @param clave
+	 * @param pais
+	 * @param idCiudad
+	 * @param direccion
+	 * @return
+	 * @author josroj
+	 */
+	
+public String validarDireccionWS2(String usuario, String clave, String pais, int idCiudad, String direccion){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a validar direccion");
+			connection = getConnection();
+			String retorno = "";
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				if(esCiudadPrincipal(idCiudad)){
+					if(direccion != null){
+					direccion = direccion.toLowerCase();					
+					HashMap datos = new HashMap();
+					MWebServiceLog mwsl = new MWebServiceLog(connection);
+					String nombreCiudad = mwsl.codigoCiudad(idCiudad);
+					String idCiudad2 = String.valueOf(idCiudad);
+					
+					datos = validarDireccion(pais, nombreCiudad, direccion, u.getUserID(), "validarDireccionWS2", idCiudad2);
+					
+					if(datos.get("mensajeRespuesta").toString().equals("0")){
+					
+						if (datos.get("error_code").toString().equals("0") && !((String) datos.get("match_count")).equalsIgnoreCase("0")) {
+							
+							appendLog("metrocuadradoWS", "entro al if de comprobacion de errores en la direccion");
+							retorno += "score," + datos.get("score").toString() + ";";
+							retorno += "direccion," + datos.get("output_address").toString() + ";";
+							retorno += "zona_id," + datos.get("zona_id").toString() + ";";
+							retorno += "zona_nombre," + datos.get("zona_nombre").toString() + ";";
+							retorno += "sector_id," + datos.get("sector_id").toString() + ";";
+							retorno += "sector_nombre," + datos.get("sector_nombre").toString() + ";";
+							retorno += "barrio_id," + datos.get("barrio_id").toString() + ";";
+							retorno += "barrio_nombre," + datos.get("barrio_nombre").toString() + ";"; 
+							retorno += "longitud," + datos.get("longitud").toString() + ";";
+							retorno += "latitud," + datos.get("latitud").toString() +";";
+							retorno += "mensajeRespuesta," + datos.get("mensajeRespuesta").toString() +";";
+							appendLog("metrocuadradoWS", "retorno: " + retorno);
+							//connection.commit();
+							mensajeRetorno = "success,true;"+retorno;
+							// appendLog("metrocuadradoWS", "retorno0= " + retorno);
+						} else {
+							retorno = "success,false;";
+							// appendLog("metrocuadradoWS", "llego al else");
+							appendLog("metrocuadradoWS", "retorno: " + retorno);
+	
+						}
+						
+					}else{
+						String mensajeRespuesta = datos.get("mensajeRespuesta").toString();
+						retorno = "success,false;" + mensajeRespuesta;
+					}
+					
+					}
+				}
+				else{
+					appendLog("metrocuadradoWS", "Error la ciudad ingresada no es principal. "+idCiudad );
+					return "success,false;mensaje,la ciudad enviada a geocodificar no es una ciudad principal.";
+				}
+				
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}
+		catch (DireccionNoExisteEnGisException e){
+			return "success,false;"+e.getMessage();
+		}
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion validarDireccionWS2 Metodo para comentar por cambio de nombre
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+
+/**
+ * Metodo publico para verificar la direccion de ciudades principales
+ * @param usuario
+ * @param clave
+ * @param pais
+ * @param idCiudad
+ * @param direccion
+ * @return
+ * @author josroj
+ * @since 14/08/2013
+ */
+
+public String validarDireccion(String usuario, String clave, String pais, int idCiudad, String direccion){
+	
+	String mensajeRetorno = "";
+	try {
+		appendLog("metrocuadradoWS", "Va a validar direccion");
+		connection = getConnection();
+		String retorno = "";
+		MUsuarios mu = new MUsuarios(connection);
+		User u = mu.obtenerUsuario(usuario);
+		String password = u.getPassword();
+		if (u != null && password.equals(clave)) {
+			int visitorId = u.getUserID();
+			
+			if(!membresiaActiva(visitorId) ){
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+				return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+			}
+			//Logica
+			if(esCiudadPrincipal(idCiudad)){
+				if(direccion != null){
+				direccion = direccion.toLowerCase();					
+				HashMap datos = new HashMap();
+				MWebServiceLog mwsl = new MWebServiceLog(connection);
+				String nombreCiudad = mwsl.codigoCiudad(idCiudad);
+				String idCiudad2 = String.valueOf(idCiudad);
+				
+				datos = validarDireccion(pais, nombreCiudad, direccion, u.getUserID(), "validarDireccionWS2", idCiudad2);
+				
+				if(datos.get("mensajeRespuesta").toString().equals("0")){
+				
+					if (datos.get("error_code").toString().equals("0") && !((String) datos.get("match_count")).equalsIgnoreCase("0")) {
+						
+						appendLog("metrocuadradoWS", "entro al if de comprobacion de errores en la direccion");
+						retorno += "score," + datos.get("score").toString() + ";";
+						retorno += "direccion," + datos.get("output_address").toString() + ";";
+						retorno += "zona_id," + datos.get("zona_id").toString() + ";";
+						retorno += "zona_nombre," + datos.get("zona_nombre").toString() + ";";
+						retorno += "sector_id," + datos.get("sector_id").toString() + ";";
+						retorno += "sector_nombre," + datos.get("sector_nombre").toString() + ";";
+						retorno += "barrio_id," + datos.get("barrio_id").toString() + ";";
+						retorno += "barrio_nombre," + datos.get("barrio_nombre").toString() + ";"; 
+						retorno += "longitud," + datos.get("longitud").toString() + ";";
+						retorno += "latitud," + datos.get("latitud").toString() +";";
+						retorno += "mensajeRespuesta," + datos.get("mensajeRespuesta").toString() +";";
+						appendLog("metrocuadradoWS", "retorno: " + retorno);
+						//connection.commit();
+						mensajeRetorno = "success,true;"+retorno;
+						// appendLog("metrocuadradoWS", "retorno0= " + retorno);
+					} else {
+						retorno = "success,false;";
+						// appendLog("metrocuadradoWS", "llego al else");
+						appendLog("metrocuadradoWS", "retorno: " + retorno);
+
+					}
+					
+				}else{
+					String mensajeRespuesta = datos.get("mensajeRespuesta").toString();
+					retorno = "success,false;" + mensajeRespuesta;
+				}
+				
+				}
+			}
+			else{
+				appendLog("metrocuadradoWS", "Error la ciudad ingresada no es principal. "+idCiudad );
+				return "success,false;mensaje,la ciudad enviada a geocodificar no es una ciudad principal.";
+			}
+			
+		} 
+		else {
+			appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+			return MensajeRespuesta.CLAVE_INVALIDA.toString();
+		}
+	}
+	catch (DireccionNoExisteEnGisException e){
+		return "success,false;"+e.getMessage();
+	}
+	catch (UserNotFoundException e) {				
+		mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+		appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+		appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		
+	}
+	catch (SQLException e) {
+		mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+					" con Metrocuadrado. Codigo : 9998 ";
+		appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		
+	} catch (Exception e) {
+		mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+					" con Metrocuadrado. Codigo : 9999 ";
+		appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		
+	}
+	finally{
+		try {
+			// TODO: Va cerrar coneccion validarDireccion
+			appendLog("metrocuadradoWS", "va a soltar la conexion");
+			releaseConnection(connection);
+			connection = null;
+			liberarPeticion();
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	return mensajeRetorno;
+}
+
+
+	
+	/**
+	 * Metodo que recupera los inmuebles eliminados.
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @return
+	 * @author josroj
+	 * @since 13/06/2013
+	 */
+	
+	public String recuperarInmuebleEliminado(String usuario, String clave, String idInmueble){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar el inmueble"+idInmueble);
+			connection = getConnection();
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			mensajeRetorno = "inmueble,"+idInmueble+";mensaje,";
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				verificarPermisoInmueble(idInmueble, visitorId);
+				MInmuebles MInmuebles = new MInmuebles(connection);
+				if(inmuebleEliminado(idInmueble)){
+					appendLog("metrocuadradoWS", "Recuparar el inmueble"+idInmueble);
+					MInmuebles.habilitarInmuebleAUsuario(idInmueble, "Recuperado por WS,");
+					mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_RECUPERADO.toString();
+					appendLog("metrocuadradoWS", mensajeRetorno+MensajeRespuesta.INMUEBLE_RECUPERADO.toString());
+
+				}
+				else{
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.INMUEBLE_NO_ESTA_ELIMINADO.toString());
+					return mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_ESTA_ELIMINADO.toString();
+				}
+				
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (InmuebleNoExisteException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_EXISTE.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (InmuebleNoPerteneceException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+			appendLog("metrocuadradoWS", "ERROR : El inmueble "+idInmueble+" no fue ingresado por usted");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion recuperarInmuebleEliminado
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+
+	
+	/**
+	 * Metodo que retorna las regiones activas en metrocuadrado
+	 * @param usuario
+	 * @param clave
+	 * @return
+	 * @author josroj
+	 * @since 28/03/2014
+	 */
+	public String obtenerRegiones(String usuario, String clave){
+
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a recuparar las regiones activas en metrocuadrado");
+			connection = getConnection();
+			String regiones = "";
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				regiones = obtenerRegiones();
+				mensajeRetorno = "success,true;";
+				if(regiones != ""){
+					mensajeRetorno= normalizarCadena(mensajeRetorno+regiones);
+				}
+			} 
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion obtenerCiudades
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+	
+	/**
+	 * 
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @param nombre
+	 * @param telefono
+	 * @return
+	 */
+	public String asociarAgente(String usuario, String clave, String idInmueble ,String nombre, String telefono ){
+			
+			String mensajeRetorno = "";
+			try {
+				appendLog("metrocuadradoWS", "Va a asociarAgente al inmueble "+idInmueble);
+				connection = getConnection();
+				
+				appendLog("metrocuadradoWS", "usuario "+usuario);
+				appendLog("metrocuadradoWS", "clave "+clave);
+				appendLog("metrocuadradoWS", "idInmueble "+idInmueble);
+				appendLog("metrocuadradoWS", "nombre "+nombre);
+				appendLog("metrocuadradoWS", "telefono "+telefono);
+				
+				MUsuarios mu = new MUsuarios(connection);
+				User u = mu.obtenerUsuario(usuario);
+				String password = u.getPassword();
+				mensajeRetorno = "inmueble,"+idInmueble+";";
+				
+				if (u != null && password.equals(clave)) {
+					int visitorId = u.getUserID();
+					
+					if(!membresiaActiva(visitorId) ){
+						appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+						return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+					}
+					//Logica
+					verificarPermisoInmueble(idInmueble, visitorId);
+					if(membresiaConPermisosAgenteInm(visitorId)){
+						String mensaje = "mensaje,"+asociarAgenteInmobiliario(idInmueble,nombre,telefono)+";";
+						mensajeRetorno = mensajeRetorno+mensaje;
+					}
+					else{
+						return MensajeRespuesta.USUARIO_MEMBRESIA_SIN_PERMISOS_AGENTE.toString();
+					}
+					
+				}
+				else {
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+					return MensajeRespuesta.CLAVE_INVALIDA.toString();
+				}
+			}	
+			catch (UserNotFoundException e) {				
+				mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+				appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+				appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+				
+			}
+			catch (InmuebleNoExisteException e) {
+				mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_EXISTE.toString();
+				appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+			}
+			catch (InmuebleNoPerteneceException e) {
+				mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+				appendLog("metrocuadradoWS", "ERROR : El inmueble "+idInmueble+" no fue ingresado por usted");
+				appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			}
+			catch (SQLException e) {
+				mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+							" con Metrocuadrado. Codigo : 9998 ";
+				appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+				
+			} catch (Exception e) {
+				mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+							" con Metrocuadrado. Codigo : 9999 ";
+				appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+				
+			}
+			finally{
+				try {
+					// TODO: Va cerrar coneccion despublicarInmueble
+					appendLog("metrocuadradoWS", "va a soltar la conexion");
+					releaseConnection(connection);
+					connection = null;
+					liberarPeticion();
+					
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+			return mensajeRetorno;
+		}
+
+	/**
+	 * 
+	 * @param usuario
+	 * @param clave
+	 * @param idInmueble
+	 * @param url
+	 * @return
+	 */
+	
+	public String insertarVideoInmueble(String usuario, String clave, String idInmueble ,String url){
+		
+		String mensajeRetorno = "";
+		try {
+			appendLog("metrocuadradoWS", "Va a despublicar el inmueble"+idInmueble);
+			connection = getConnection();
+			
+			MUsuarios mu = new MUsuarios(connection);
+			User u = mu.obtenerUsuario(usuario);
+			String password = u.getPassword();
+			mensajeRetorno = "inmueble,"+idInmueble+";";
+			
+			if (u != null && password.equals(clave)) {
+				int visitorId = u.getUserID();
+				
+				if(!membresiaActiva(visitorId) ){
+					appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString());
+					return MensajeRespuesta.USUARIO_MEMBRESIA_VENCIDA.toString();
+				}
+				//Logica
+				verificarPermisoInmueble(idInmueble, visitorId);
+				String mensaje = "";
+				boolean existeVideo = existeVideo(idInmueble);
+				
+				mensaje = "mensaje,"+procesarUrlVideo(idInmueble,url,existeVideo)+";";
+				
+				mensajeRetorno = mensajeRetorno+mensaje; 
+				
+			}
+			else {
+				appendLog("metrocuadradoWS", "ERROR : "+MensajeRespuesta.CLAVE_INVALIDA.toString());
+				return MensajeRespuesta.CLAVE_INVALIDA.toString();
+			}
+		}	
+		catch (UserNotFoundException e) {				
+			mensajeRetorno = MensajeRespuesta.USUARIO_INVALIDO.toString();
+			appendLog("metrocuadradoWS", "ERROR : Usuario [" + usuario + "] no esta registrado en Metrocuadrado.com");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			
+		}
+		catch (InmuebleNoExisteException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_EXISTE.toString();
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+
+		}
+		catch (InmuebleNoPerteneceException e) {
+			mensajeRetorno = mensajeRetorno+MensajeRespuesta.INMUEBLE_NO_PERTENECE.toString();
+			appendLog("metrocuadradoWS", "ERROR : El inmueble "+idInmueble+" no fue ingresado por usted");
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+		}
+		catch (SQLException e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9998 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			e.printStackTrace();
+			
+		} catch (Exception e) {
+			mensajeRetorno = "Ocurrio un error procesando la peticion por favor intente de nuevo o comuniquese" + 
+						" con Metrocuadrado. Codigo : 9999 ";
+			appendLog("metrocuadradoWS", mensajeRetorno + " ERROR : \n " + e.getMessage() + " " + e.getCause());
+			e.printStackTrace();
+			
+		}
+		finally{
+			try {
+				// TODO: Va cerrar coneccion insertarVideoInmueble
+				appendLog("metrocuadradoWS", "va a soltar la conexion");
+				releaseConnection(connection);
+				connection = null;
+				liberarPeticion();
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return mensajeRetorno;
+	}
+
+	protected final Connection getConnection() throws Exception {
+		return JDBCConnectionManager.getConnection(getFullPoolName());
+	}
+
+	private final String getFullPoolName() {
+		return getProjectId() + "." + getPoolName();
+	}
+
+	private void appendLog(String logname, String message) {
+		Log.append(getProjectId(), logname, message);
+	}
+
+	private final String getProperty(String properties, String property) {
+		return ProjectsManager
+				.getProperty(getProjectId(), properties, property);
+	}
+
+	private final String getProperty(String property) {
+		return ProjectsManager.getProperty(getProjectId(), getProjectId(),
+				property);
+	}
+
+	private void releaseConnection(Connection c) throws Exception {
+		JDBCConnectionManager.releaseConnection(getFullPoolName(), c);
+	}
+	
+}

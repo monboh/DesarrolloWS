@@ -1,0 +1,186 @@
+package co.com.ceet.m2.cargadorxml.model;
+
+import java.io.Serializable;
+import java.math.BigDecimal;
+
+/**
+ * Foto Value Object.
+ * This class is value object representing database table Foto
+ * This class is intented to be used together with associated Dao object.
+ */
+
+/**
+ * 
+ * @author Jaime Alfredo Bonilla Perez jaimebp@gmail.com
+ */
+
+public class Foto implements Cloneable, Serializable {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	static private final String XMLHEADER = "<Registro>";
+	static private final String XMLFOOTER = "</Registro>";
+	static private final String BASEURL = "http://metrocuadrado.blob.core.windows.net/inmueblespru";
+	/**
+	 * Persistent Instance variables. This data is directly mapped to the
+	 * columns of database table.
+	 */
+	private String idInmueble;
+	private String urlFoto;
+
+	public Foto(String idInmuebleIn, String urlFoto, String nroFoto) {
+		super();
+		setIdInmueble(idInmuebleIn);
+		setUrlFoto(urlFoto);
+		this.nroFoto = nroFoto;
+	}
+
+	private String nroFoto;
+
+	/**
+	 * Constructors. .
+	 */
+
+	public Foto() {
+		super();
+	}
+
+	public Foto(String idInmuebleIn) {
+		super();
+		setIdInmueble(idInmuebleIn);
+
+	}
+
+	/**
+	 * Get- and Set-methods for persistent variables. The default behaviour does
+	 * not make any checks against malformed data, so these might require some
+	 * manual additions.
+	 */
+
+	public String getIdInmueble() {
+		return this.idInmueble;
+	}
+
+	public void setIdInmueble(String idInmuebleIn) {
+		if (idInmuebleIn == null)
+			this.idInmueble = null;
+		else
+			this.idInmueble = idInmuebleIn.trim();
+	}
+
+	public String getUrlFoto() {
+		if (urlFoto.contains("://"))
+			return this.urlFoto;
+		else
+			return "http://" + this.urlFoto;
+	}
+
+	public void setUrlFoto(String urlFotoIn) {
+		if (urlFotoIn == null)
+			this.urlFoto = null;
+		else
+			this.urlFoto = urlFotoIn.trim();
+	}
+
+	public String getNroFoto() {
+		return this.nroFoto;
+	}
+
+	public void setNroFoto(String nroFotoIn) {
+		this.nroFoto = nroFotoIn;
+	}
+
+
+
+	/**
+	 * hasEqualMapping-method will compare two Foto instances and return true if
+	 * they contain same values in all persistent instance variables. If
+	 * hasEqualMapping returns true, it does not mean the objects are the same
+	 * instance. However it does mean that in that moment, they are mapped to
+	 * the same row in database.
+	 */
+	public boolean hasEqualMapping(Foto valueObject) {
+
+		if (this.idInmueble == null) {
+			if (valueObject.getIdInmueble() != null)
+				return (false);
+		} else if (!this.idInmueble.equals(valueObject.getIdInmueble())) {
+			return (false);
+		}
+		if (this.urlFoto == null) {
+			if (valueObject.getUrlFoto() != null)
+				return (false);
+		} else if (!this.urlFoto.equals(valueObject.getUrlFoto())) {
+			return (false);
+		}
+		if (this.nroFoto == null) {
+			if (valueObject.getNroFoto() != null)
+				return (false);
+		} else if (!this.nroFoto.equals(valueObject.getNroFoto())) {
+			return (false);
+		}
+
+		return true;
+	}
+
+	/**
+	 * toString will return String object representing the state of this
+	 * valueObject. This is useful during application development, and possibly
+	 * when application is writing object states in textlog.
+	 */
+	public String toString() {
+		StringBuffer out = new StringBuffer();
+		out.append("class Foto:: \n");
+		out.append("idInmueble = " + this.idInmueble + "\n");
+		out.append("urlFoto = " + this.getUrlFoto() + "\n");
+		out.append("nroFoto = " + this.nroFoto + "\n");
+
+		return out.toString();
+	}
+
+	/**
+	 * Clone will return identical deep copy of this valueObject. Note, that
+	 * this method is different than the clone() which is defined in
+	 * java.lang.Object. Here, the retuned cloned object will also have all its
+	 * attributes cloned.
+	 */
+	public Object clone() {
+		Foto cloned = new Foto();
+
+		if (this.idInmueble != null)
+			cloned.setIdInmueble(new String(this.idInmueble));
+		if (this.urlFoto != null)
+			cloned.setUrlFoto(new String(this.urlFoto));
+		if (this.nroFoto != null)
+			cloned.setNroFoto(new String(this.nroFoto));
+
+		return cloned;
+	}
+
+	public String toXML() {
+		StringBuilder sb = new StringBuilder();
+		sb.append(XMLHEADER);
+		sb.append("<IdPublicacion>" + idInmueble + "</IdPublicacion>");
+		sb.append("<IdSecuencia>" + nroFoto + "</IdSecuencia>");
+		sb.append("<URL>" + this.getUrlFoto() + "</URL>");
+		sb.append("<Letra>" + "</Letra>");
+		sb.append("<Transformar>true</Transformar>");
+		sb.append(XMLFOOTER);
+		return sb.toString();
+	}
+
+	public String toURL() {
+		StringBuilder ret = new StringBuilder(BASEURL);
+		ret.append("/" + getIdInmueble());
+		ret.append("/" + getIdInmueble());
+		ret.append("_" + getNroFoto());
+		ret.append("_l.jpg");
+
+		// String
+		// BASEURL="http://metrocuadrado.blob.core.windows.net/inmuebles/3/3_2_s.jpg";
+		return ret.toString();
+	}
+
+}
