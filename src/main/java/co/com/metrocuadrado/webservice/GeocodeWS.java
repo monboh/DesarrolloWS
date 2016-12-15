@@ -657,7 +657,7 @@ public class GeocodeWS extends ImageUploader {
 	 * @param clave
 	 * @return
 	 * @author monboh
-	 * @since 06/12/2015
+	 * @since 06/12/2016
 	 */
 	public String obtenerRegiones(String usuario, String clave) {
 
